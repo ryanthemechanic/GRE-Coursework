@@ -1,0 +1,26 @@
+# Python
+__pycache__/
+*.py[cod]
+.ipynb_checkpoints/
+.env
+
+# Generated chart images
+COMP1891/png/
+COMP1891/*.png
+
+# Generated chart images
+COMP1891/png/
+
+# Generated PDFs and archives
+*.zip
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# LibreOffice lock files
+.~lock.*
+
+# Jupyter checkpoints
+.ipynb_checkpoints/
