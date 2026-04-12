@@ -1,0 +1,26 @@
+# Python
+__pycache__/
+*.py[cod]
+.ipynb_checkpoints/
+.env
+
+# Generated chart images
+COMP1891/png/
+COMP1891/*.png
+
+# Datasets (too large / not for public repos)
+COMP1891/Datasets/
+COMP1891/Estate_Agent.csv
+COMP1891/FacesSample/
+COMP1891/Expressions/
+
+# Generated PDFs and archives
+*.zip
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# LibreOffice lock files
+.~lock.*
