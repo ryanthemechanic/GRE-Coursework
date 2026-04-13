@@ -1,0 +1,121 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Axure Bridge Command Contract",
+  "type": "object",
+  "required": ["token", "action", "payload"],
+  "properties": {
+    "token": {
+      "type": "string",
+      "minLength": 1
+    },
+    "action": {
+      "type": "string",
+      "enum": [
+        "open_project",
+        "add_page",
+        "add_text",
+        "add_button",
+        "export_html",
+        "save_project"
+      ]
+    },
+    "payload": {
+      "type": "object"
+    }
+  },
+  "allOf": [
+    {
+      "if": { "properties": { "action": { "const": "open_project" } } },
+      "then": {
+        "properties": {
+          "payload": {
+            "type": "object",
+            "required": ["projectPath"],
+            "properties": {
+              "projectPath": { "type": "string", "minLength": 1 }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": { "properties": { "action": { "const": "add_page" } } },
+      "then": {
+        "properties": {
+          "payload": {
+            "type": "object",
+            "required": ["pageName"],
+            "properties": {
+              "pageName": { "type": "string", "minLength": 1 },
+              "parentPage": { "type": "string" }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": { "properties": { "action": { "const": "add_text" } } },
+      "then": {
+        "properties": {
+          "payload": {
+            "type": "object",
+            "required": ["pageName", "text", "x", "y", "w", "h"],
+            "properties": {
+              "pageName": { "type": "string", "minLength": 1 },
+              "text": { "type": "string" },
+              "x": { "type": "integer" },
+              "y": { "type": "integer" },
+              "w": { "type": "integer", "minimum": 1 },
+              "h": { "type": "integer", "minimum": 1 }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": { "properties": { "action": { "const": "add_button" } } },
+      "then": {
+        "properties": {
+          "payload": {
+            "type": "object",
+            "required": ["pageName", "label", "x", "y", "w", "h"],
+            "properties": {
+              "pageName": { "type": "string", "minLength": 1 },
+              "label": { "type": "string" },
+              "x": { "type": "integer" },
+              "y": { "type": "integer" },
+              "w": { "type": "integer", "minimum": 1 },
+              "h": { "type": "integer", "minimum": 1 }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": { "properties": { "action": { "const": "export_html" } } },
+      "then": {
+        "properties": {
+          "payload": {
+            "type": "object",
+            "required": ["outputFolder"],
+            "properties": {
+              "outputFolder": { "type": "string", "minLength": 1 },
+              "openAfterExport": { "type": "boolean" }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": { "properties": { "action": { "const": "save_project" } } },
+      "then": {
+        "properties": {
+          "payload": {
+            "type": "object",
+            "additionalProperties": true
+          }
+        }
+      }
+    }
+  ]
+}
