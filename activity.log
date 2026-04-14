@@ -9,3 +9,4 @@
 2026-04-14 15:29 - fix issue with PCA variance calculation
 2026-04-14 16:43 - code review: clean up imports
 2026-04-14 18:57 - add correlation analysis
+2026-04-14 20:34 - address review comments on report formatting
