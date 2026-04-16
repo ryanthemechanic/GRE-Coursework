@@ -18,3 +18,4 @@
 2026-04-15 22:59 - add data visualisation
 2026-04-16 13:17 - add data visualisation
 2026-04-16 17:38 - fix issue with CSV delimiter detection
+2026-04-16 20:04 - fix issue with regression coefficient plot
