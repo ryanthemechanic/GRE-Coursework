@@ -35,3 +35,4 @@
 2026-04-20 16:26 - update COMP1891 notebook
 2026-04-21 15:19 - code review: refactor chart generation
 2026-04-21 19:41 - save progress
+2026-04-21 21:10 - fix issue with confusion matrix display
