@@ -37,3 +37,4 @@
 2026-04-21 19:41 - save progress
 2026-04-21 21:10 - fix issue with confusion matrix display
 2026-04-21 22:21 - cleanup code
+2026-04-23 11:08 - fix regression model
