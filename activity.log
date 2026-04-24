@@ -42,3 +42,4 @@
 2026-04-23 14:47 - code review: add input validation
 2026-04-23 18:58 - resolve issue with t-SNE random seed
 2026-04-23 19:47 - add seed data
+2026-04-24 11:01 - fix issue with outlier removal bounds
