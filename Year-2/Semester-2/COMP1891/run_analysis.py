@@ -275,3 +275,9 @@ axes[1].axvline(0.5, color='red', ls='--', lw=1.5, label='Alert threshold')
 axes[1].set_xlabel('Avg Stress Score (0-1)'); axes[1].set_title('C2 - Average Weekly Stress'); axes[1].legend()
 plt.tight_layout(); plt.savefig('png/C2_wellbeing_monitor.png', dpi=150, bbox_inches='tight'); plt.close()
 print("C2 saved.")
+
+# input validation
+def validate_dataset(df):
+    assert df.shape[0] > 0, "Dataset is empty"
+    assert 'House_Price' in df.columns, "Missing target column"
+    return True
