@@ -43,3 +43,21 @@ Python data science and machine learning coursework.
 
 ### COMP1773 — Human Computer Interaction
 Axure RP prototype: FreshTrack food waste reduction app.
+
+---
+
+## How to Run
+
+### COMP1551
+```
+csc EducationCentreSystem.cs
+mono EducationCentreSystem.exe
+```
+
+### COMP1891
+```
+pip install -r requirements.txt
+python run_analysis.py
+python build_report.py
+```
+Open `COMP1891_Report.html` in Chrome and print to PDF.
