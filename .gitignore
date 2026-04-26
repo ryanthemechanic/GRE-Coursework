@@ -24,3 +24,6 @@ desktop.ini
 
 # LibreOffice lock files
 .~lock.*
+
+# Jupyter checkpoints
+.ipynb_checkpoints/
