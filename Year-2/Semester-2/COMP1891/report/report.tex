@@ -59,15 +59,14 @@ from cell B3.1 and Figure~\ref{fig:resid} from cell B1.4. The notebook is also p
 \subsection{A1 -- Exploratory Data Analysis}
 
 The supplied file \texttt{Estate\_Agent.csv} contains 350 records and nine columns. It is
-semicolon-delimited rather than comma-delimited, so the loader detects the separator from the
-header line instead of assuming a default; read with the wrong separator the file collapses
-into a single unusable column.
+semicolon-delimited, so the loader detects the separator from the header line rather than
+assuming a comma; read wrongly, the file collapses into a single unusable column.
 
-The nine columns divide into three roles. \texttt{House\_Price} is the regression target.
-\texttt{Rating} is an ordinal quality grade used as the classification target in Section B.
-The remaining seven -- \texttt{House\_Area}, \texttt{Build} (year of construction),
-\texttt{No\_of\_Bathrooms}, \texttt{No\_of\_Bedrooms}, \texttt{Garage\_Area},
-\texttt{Living\_Space} and \texttt{Parking} -- are predictors describing the physical property.
+The columns divide into three roles. \texttt{House\_Price} is the regression target,
+\texttt{Rating} the classification target in Section B, and the remaining seven --
+\texttt{House\_Area}, \texttt{Build} (year of construction), \texttt{No\_of\_Bathrooms},
+\texttt{No\_of\_Bedrooms}, \texttt{Garage\_Area}, \texttt{Living\_Space} and
+\texttt{Parking} -- are predictors describing the physical property.
 
 All seven predictors are retained, on two tests: does the feature describe the property, and
 does it carry signal? Table~\ref{tab:corr} shows every predictor correlating with price at
@@ -412,6 +411,43 @@ resolution the data can support. An estate agent advised on whether a property i
 high grade asset is well served. A claim to separate grade 8 from grade 9 on three examples is
 not defensible.
 
+\subsubsection*{B3.4 -- Should the majority class be resampled?}
+
+The instinct with 56\% of rows in one grade is to rebalance by resampling. That was tested
+rather than assumed (Table~\ref{tab:resample}), with all resampling applied \emph{inside} each
+cross-validation fold.
+
+\begin{table}[H]
+\centering
+\small
+\caption{B3.4 -- Imbalance treatments, SVM on the raw eight-grade target.}
+\label{tab:resample}
+\begin{tabular}{lcccc}
+\toprule
+\textbf{Treatment} & \textbf{CV macro-F1} & \textbf{Test macro-F1} & \textbf{Balanced acc.} & \textbf{Accuracy} \\
+\midrule
+None (baseline)             & 0.118 & 0.103 & 0.125 & 0.524 \\
+\texttt{class\_weight='balanced'} & \textbf{0.173} & \textbf{0.333} & \textbf{0.488} & 0.512 \\
+Random over-sampling        & 0.147 & 0.194 & 0.201 & 0.488 \\
+SMOTE ($k=1$)               & \multicolumn{4}{c}{\emph{cannot run}} \\
+Random under-sampling       & 0.129 & 0.104 & 0.190 & 0.305 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+No resampling route survives this dataset. SMOTE cannot run at all: it interpolates between a
+point and its nearest same-class neighbours, but the rarest grade holds two training rows, and
+inside a fold that falls to one. Under-sampling would cut training data from 245 rows to roughly
+16, discarding 93\% of the evidence, and accuracy collapses to 0.305. Over-sampling merely
+duplicates a few rare properties, so the model memorises those individuals. Class weighting wins
+because it re-weights the loss rather than inventing or discarding data.
+
+The counter-demonstration matters more than the table. Applying SMOTE \emph{before} the split
+scores 0.801 macro-F1 against 0.333 for the best honest treatment -- but it inflates the data
+from 327 to 1{,}464 rows, so most of the test set is synthetic points interpolated from the
+training rows the model was fitted on. That 0.801 measures the resampling method, not the
+model.
+
 \subsection{B4 -- Clustering and Dimensionality Reduction}
 
 $k$-means was run for $k = 2 \ldots 10$ and evaluated by the elbow method and silhouette score.
@@ -514,10 +550,10 @@ Method 1 never wrongly assigns Neutral, but misses seven of the nine true Neutra
 recall of just 0.22. Method 2 wrongly labels two images Neutral, \texttt{fig109.jpg} (truly
 Angry) and \texttt{fig145.jpg} (truly Sad), and misses six true Neutrals, for 0.33 recall.
 
-Neutral is the hardest class for both, which is intuitive: defined by the \emph{absence} of
-expression, it sits close to any weak or partial expression, and a low-intensity angry or sad
-face is genuinely near-neutral in appearance. This matters for the wellbeing application, where
-misreading distress as neutral is the error of greatest consequence.
+Neutral is hardest for both, which is intuitive: defined by the \emph{absence} of expression, it
+sits close to any weak or partial one, and a low-intensity angry or sad face is genuinely
+near-neutral. This matters for the wellbeing application, where misreading distress as neutral
+is the error of greatest consequence.
 
 \begin{figure}[H]
 \centering
@@ -545,10 +581,10 @@ the corporate health and wellness initiative. Expressions are mapped to a stress
 rules: a \emph{level} rule (weekly mean above 0.55) and a \emph{trend} rule (a rise above 0.15
 from the first week to the last).
 
-Two rules are needed because they catch different problems. The level rule finds employees who
-are consistently under strain; the trend rule catches deterioration early, flagging employees
-whose absolute score is still moderate but climbing. In the simulation the trend rule flags two
-employees rising by 0.32 and 0.36 whom the level rule alone would have missed until later.
+Two rules are needed because they catch different problems: the level rule finds employees
+consistently under strain, while the trend rule catches deterioration early, flagging those
+whose score is still moderate but climbing. In the simulation the trend rule flags two employees
+rising by 0.32 and 0.36 whom the level rule alone would have missed.
 
 \begin{figure}[H]
 \centering
@@ -557,12 +593,11 @@ employees rising by 0.32 and 0.36 whom the level rule alone would have missed un
 \label{fig:c2}
 \end{figure}
 
-The design is constrained by the ethics discussed in Section D and by the measured accuracy in
-C1. Rules operate on weekly aggregates, never on individual daily readings; managers see the
-team average and the number of employees flagged, not the per-person matrix; participation is
-opt-in and withdrawable. Because C1 measured only 72\% accuracy with Neutral the weakest class,
-a flag prompts an \emph{offer} of a voluntary check-in and never an automated intervention or
-any input to performance management.
+The design is constrained by Section D's ethics and C1's measured accuracy. Rules operate on
+weekly aggregates, never individual daily readings; managers see the team average and the number
+flagged, not the per-person matrix; participation is opt-in and withdrawable. Because C1 measured
+only 72\% accuracy with Neutral weakest, a flag prompts an \emph{offer} of a voluntary check-in,
+never an automated intervention or any input to performance management.
 
 % =====================================================================
 \section{Section D: AI and LSEPI}
@@ -595,10 +630,10 @@ For Scenario 1: complete a DPIA before deployment; exclude postcode and other pr
 characteristic proxies, as done here; publish prediction intervals with every point estimate;
 apply explainable-AI methods such as SHAP; and audit periodically for disparate impact.
 
-For Scenario 2: obtain explicit, withdrawable consent with a penalty-free opt-out; report only
-aggregates, as the C2 design does; keep a human in the loop so a flag triggers a conversation
-rather than an action; publish the measured accuracy and weakest class to the workforce; delete
-raw images once scored; and review error rates across demographic groups.
+For Scenario 2: explicit, withdrawable consent with a penalty-free opt-out; aggregate-only
+reporting, as C2 does; a human in the loop so a flag opens a conversation rather than triggering
+an action; publication of the measured accuracy and weakest class; deletion of raw images once
+scored; and review of error rates across demographic groups.
 
 \subsection{D3 -- Intelligent Systems for the Common Good}
 
