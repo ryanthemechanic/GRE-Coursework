@@ -73,32 +73,33 @@ does it carry signal? Table~\ref{tab:corr} shows every predictor correlating wit
 $|r| \geq 0.15$, and none is a proxy for a protected characteristic -- there is no postcode,
 neighbourhood or demographic column, which materially reduces the discrimination risk
 discussed in Section D. \texttt{Rating} is deliberately excluded: it correlates with price at
-$r = -0.045$, and is a subjective assessment rather than a physical measurement, so including
+$r = -0.042$, and is a subjective assessment rather than a physical measurement, so including
 it would make the model depend on a human judgement the agency wants to benchmark.
 
 \begin{table}[H]
 \centering
 \small
-\caption{Pearson correlation with \texttt{House\_Price} (after cleaning).}
+\caption{Pearson correlation with \texttt{House\_Price}, as reported by notebook cell A1.5
+(numeric columns cleaned, before outlier removal).}
 \label{tab:corr}
 \begin{tabular}{lc}
 \toprule
 \textbf{Feature} & \textbf{$r$ with House\_Price} \\
 \midrule
 Parking            & 0.691 \\
-Garage\_Area       & 0.680 \\
-Living\_Space      & 0.608 \\
-No\_of\_Bathrooms  & 0.531 \\
-Build              & 0.531 \\
-House\_Area        & 0.286 \\
-No\_of\_Bedrooms   & 0.156 \\
-Rating             & $-0.045$ \\
+Garage\_Area       & 0.681 \\
+Living\_Space      & 0.606 \\
+No\_of\_Bathrooms  & 0.536 \\
+Build              & 0.530 \\
+House\_Area        & 0.288 \\
+No\_of\_Bedrooms   & 0.162 \\
+Rating             & $-0.042$ \\
 \bottomrule
 \end{tabular}
 \end{table}
 
 The strongest predictor is \texttt{Parking} ($r=0.691$), narrowly ahead of
-\texttt{Garage\_Area} ($r=0.680$). Both measure the same underlying attribute -- garage
+\texttt{Garage\_Area} ($r=0.681$). Both measure the same underlying attribute -- garage
 capacity as a count and as an area -- and are strongly correlated with each other, which
 matters for interpreting the regression coefficients in Section B1.
 
@@ -219,6 +220,18 @@ climb consistently with rating.
 \label{fig:box}
 \end{figure}
 
+\textbf{Pairwise relationships (Figure~\ref{fig:pair}).} A pair plot of the four
+strongest predictors against price shows every bivariate relationship at once, which is how the
+overlap between \texttt{Parking} and \texttt{Garage\_Area} -- quantified as multicollinearity in
+B1.4 -- first becomes visible.
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.78\textwidth]{A3_pairplot.png}
+\caption{A3.5 -- Pair plot of the top correlated features against price.}
+\label{fig:pair}
+\end{figure}
+
 \textbf{Class balance (Figure~\ref{fig:balance}).} \texttt{Rating} is the Section B target, so
 its balance was checked before any model was fitted. Grade 5 holds 56.0\% of properties, the
 imbalance ratio is 61:1, and grades 2, 3 and 9 have under ten examples each. This determines the
@@ -258,16 +271,16 @@ occasional bad predictions; $R^2$ states the proportion of price variance explai
 \toprule
 \textbf{Split} & \textbf{Train} & \textbf{Test} & \textbf{MAE} & \textbf{RMSE} & \textbf{$R^2$} \\
 \midrule
-70/30 & 228 & 99 & 23{,}701.57 & 31{,}967.72 & 0.763 \\
+70/30 & 228 & 99 & 23{,}701.57 & 31{,}967.72 & 0.758 \\
 80/20 & 261 & 66 & 24{,}113.45 & 31{,}915.02 & 0.763 \\
-90/10 & 294 & 33 & 23{,}760.23 & 30{,}314.78 & 0.810 \\
+90/10 & 294 & 33 & 23{,}760.23 & 30{,}314.78 & 0.811 \\
 \bottomrule
 \end{tabular}
 \end{table}
 
 The reporting split was fixed at 80/20 \emph{before} any result was seen; choosing the
 best-scoring split afterwards would select a model on the test set and report the flattering
-0.810 from the 90/10 split, whose 33-property test set is the least reliable. On the declared
+0.811 from the 90/10 split, whose 33-property test set is the least reliable. On the declared
 split the model explains 76.3\% of variance with a typical error of \pounds24{,}113 against a
 median price near \pounds164{,}000, about 15\%.
 
@@ -411,6 +424,14 @@ resolution the data can support. An estate agent advised on whether a property i
 high grade asset is well served. A claim to separate grade 8 from grade 9 on three examples is
 not defensible.
 
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.62\textwidth]{B3_banded_confusion.png}
+\caption{B3.3 -- Confusion matrix on the banded target. The Mid band is recovered well; the
+minority bands are separated far better than any individual rare grade was.}
+\label{fig:bandcm}
+\end{figure}
+
 \subsubsection*{B3.4 -- Should the majority class be resampled?}
 
 The instinct with 56\% of rows in one grade is to rebalance by resampling. That was tested
@@ -519,6 +540,14 @@ single exemplar per class.
 the expression directly, having been trained on thousands of labelled faces. Its \texttt{disgust}
 output has no counterpart in the brief and is folded into Angry.
 \end{itemize}
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.92\textwidth]{C1_reference_expressions.png}
+\caption{C1 -- The \texttt{Expressions} folder: one self-selected reference image per expression,
+used as the exemplar set for Method 1.}
+\label{fig:refexpr}
+\end{figure}
 
 \begin{table}[H]
 \centering
