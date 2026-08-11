@@ -24,7 +24,7 @@
 \usepackage[hidelinks]{hyperref}
 \usepackage{xcolor}
 
-\graphicspath{{../}{./}}
+\graphicspath{{../figures/}{../}{./}}
 \captionsetup{font=small,labelfont=bf}
 
 \title{\vspace{-1.5cm}\textbf{Applications in AI and Data Science}\\[0.3em]
@@ -34,14 +34,6 @@
 
 \begin{document}
 \maketitle
-
-\begin{abstract}
-\noindent This report applies a complete data science and machine learning workflow to two
-business scenarios: a 350-record estate agency dataset used to model residential property
-prices, and a sample of 50 facial images supporting a workplace wellbeing initiative. All
-results are produced by the accompanying notebook \texttt{COMP1891\_notebook.ipynb}, whose
-cell headings match the section numbers used here.
-\end{abstract}
 
 \tableofcontents
 \vspace{0.5em}
@@ -167,10 +159,10 @@ Garage\_Area  & 1.5 IQR & $-63$ & 959 & 3 & 0.9 \\
 Each visualisation was chosen to answer a specific question rather than to display the data
 generically.
 
-\textbf{Price distribution (Figure~\ref{fig:price}).} Linear regression assumes approximately
-normal residuals, and a histogram paired with a Q--Q plot tests that assumption directly.
-Post-cleaning skewness is 0.707 -- below the $|{\text{skew}}| > 1$ threshold at which a log
-transformation would normally be applied, so price was modelled untransformed.
+\textbf{Price distribution (Figure~\ref{fig:price}).} Linear regression assumes normal
+residuals, and a histogram with a Q--Q plot tests that directly. Post-cleaning skewness is
+0.707, below the $|{\text{skew}}| > 1$ threshold for a log transformation, so price was
+modelled untransformed.
 
 \begin{figure}[H]
 \centering
@@ -180,10 +172,9 @@ transformation would normally be applied, so price was modelled untransformed.
 \end{figure}
 
 \textbf{Feature distributions (Figure~\ref{fig:dist}).} Count and continuous variables are
-plotted differently. Bedrooms, bathrooms, rating and parking take only a handful of
-whole-number values, so drawing them as histograms creates meaningless fractional bins and
-hides how uneven the categories are; they are drawn as category bars annotated with the share
-held by the largest level, while continuous features keep histograms annotated with skewness.
+plotted differently: bedrooms, bathrooms, rating and parking take few whole-number values, so
+histograms would invent fractional bins and hide category imbalance. They are drawn as category
+bars annotated with the largest level's share; continuous features keep histograms.
 
 \begin{figure}[H]
 \centering
@@ -193,9 +184,8 @@ held by the largest level, while continuous features keep histograms annotated w
 \end{figure}
 
 \textbf{Price against the leading predictors (Figure~\ref{fig:scatter}).} Scatter plots with a
-fitted trend line test whether the relationship that the correlation coefficient summarises is
-genuinely linear, since a single correlation value cannot distinguish a linear relationship
-from a curved one.
+fitted trend line test whether the correlation reflects a genuinely linear relationship, which a
+single coefficient cannot distinguish from a curved one.
 
 \begin{figure}[H]
 \centering
@@ -204,10 +194,10 @@ from a curved one.
 \label{fig:scatter}
 \end{figure}
 
-\textbf{Price by category (Figure~\ref{fig:box})} shows how price disperses across grades and
-bedroom counts, with group sizes printed on the axis so that a wide box resting on three
-properties is not mistaken for a reliable pattern. It confirms visually what
-Table~\ref{tab:corr} states numerically: median price does not climb consistently with rating.
+\textbf{Price by category (Figure~\ref{fig:box})} shows price dispersion across grades and
+bedroom counts, with group sizes on the axis so a wide box resting on three properties is not
+read as a pattern. It confirms visually what Table~\ref{tab:corr} states: median price does not
+climb consistently with rating.
 
 \begin{figure}[H]
 \centering
@@ -216,11 +206,11 @@ Table~\ref{tab:corr} states numerically: median price does not climb consistentl
 \label{fig:box}
 \end{figure}
 
-\textbf{Class balance (Figure~\ref{fig:balance}).} Because \texttt{Rating} is the target in
-Sections B2 and B3, its balance was examined before any model was fitted. Grade 5 holds 56.0\%
-of properties, the imbalance ratio is 61:1, and grades 2, 3 and 9 have fewer than ten examples
-each. This chart determines the choice of metric throughout Section B: a model predicting grade
-5 unconditionally already scores 56\% accuracy while learning nothing.
+\textbf{Class balance (Figure~\ref{fig:balance}).} \texttt{Rating} is the Section B target, so
+its balance was checked before any model was fitted. Grade 5 holds 56.0\% of properties, the
+imbalance ratio is 61:1, and grades 2, 3 and 9 have under ten examples each. This determines the
+choice of metric throughout Section B: predicting grade 5 unconditionally already scores 56\%
+accuracy while learning nothing.
 
 \begin{figure}[H]
 \centering
@@ -232,8 +222,12 @@ each. This chart determines the choice of metric throughout Section B: a model p
 % =====================================================================
 \section{Section B: AI and Machine Learning (Scenario 1)}
 
-All models use the same seven predictors, standardised with \texttt{StandardScaler}. Scaling is
-essential for kNN and SVM, which measure distances, and harmless for linear regression.
+All models use the same seven predictors inside a \texttt{Pipeline} of median imputation,
+standardisation and the estimator. Placing preprocessing in the pipeline matters: fitted once on
+the full dataset, the scaler and imputer would learn the hold-out rows' statistics and leak them
+into training. Measured on the banded task of B3.3, that leakage inflated cross-validated
+macro-F1 from 0.469 to 0.497 and selected a different $k$. Inside a pipeline both steps refit on
+each training fold alone.
 
 \subsection{B1 -- Multiple Linear Regression}
 
@@ -251,22 +245,24 @@ occasional bad predictions; $R^2$ states the proportion of price variance explai
 \toprule
 \textbf{Split} & \textbf{Train} & \textbf{Test} & \textbf{MAE} & \textbf{RMSE} & \textbf{$R^2$} \\
 \midrule
-70/30 & 228 & 99 & 23{,}702.69 & 31{,}972.23 & 0.76 \\
-80/20 & 261 & 66 & 24{,}111.50 & 31{,}917.46 & 0.76 \\
-90/10 & 294 & 33 & 23{,}772.38 & 30{,}314.87 & 0.81 \\
+70/30 & 228 & 99 & 23{,}701.57 & 31{,}967.72 & 0.763 \\
+80/20 & 261 & 66 & 24{,}113.45 & 31{,}915.02 & 0.763 \\
+90/10 & 294 & 33 & 23{,}760.23 & 30{,}314.78 & 0.810 \\
 \bottomrule
 \end{tabular}
 \end{table}
 
-The model explains 76--81\% of price variance with a typical error near \pounds24{,}000 on a
-median price of roughly \pounds164{,}000 -- around 15\%, useful for initial guidance but not
-precise enough to set an asking price unaided. Performance is stable across splits, indicating
-the model is not sensitive to how the data is divided.
+The reporting split was fixed at 80/20 \emph{before} any result was seen; choosing the
+best-scoring split afterwards would select a model on the test set and report the flattering
+0.810 from the 90/10 split, whose 33-property test set is the least reliable. On the declared
+split the model explains 76.3\% of variance with a typical error of \pounds24{,}113 against a
+median price near \pounds164{,}000, about 15\%.
 
-The 90/10 split reports the highest $R^2$ (0.81), but this is not the best model: its test set
-holds only 33 properties, making it the least reliable estimate of the three, and the apparent
-gain is a small-sample artefact. The 70/30 and 80/20 results, agreeing at $R^2 = 0.76$, are the
-more trustworthy estimate of real-world performance.
+Even that is optimistic. Five-fold cross-validation gives $R^2 = 0.637 \pm 0.148$, folds ranging
+0.443 to 0.790. The single-split figures cluster near 0.76 only because they share one
+convenient partition; the honest estimate is twelve points lower and far less stable. The wide
+fold spread is itself a finding: with 327 records, performance depends materially on which
+properties the model happens to train on.
 
 \begin{figure}[H]
 \centering
@@ -275,23 +271,20 @@ more trustworthy estimate of real-world performance.
 \label{fig:reg}
 \end{figure}
 
-Figure~\ref{fig:coef} shows the fitted coefficients, but these must be read with care. Variance
+Figure~\ref{fig:coef} shows the coefficients, but they must be read with care. Variance
 inflation factors confirm the redundancy anticipated in A1: \texttt{Parking} reaches
-$\mathrm{VIF} = 5.32$ and \texttt{Garage\_Area} $4.87$, meaning 81\% and 80\% of each is
-predictable from the other features. Above the conventional threshold of 5, a coefficient
-becomes unstable, because the model cannot separate two overlapping measurements of the same
-garage provision. Their individual coefficients are therefore not a safe guide to the value of
-an extra parking space, though predictive accuracy is unaffected -- only interpretation is. All
-five remaining features sit below $\mathrm{VIF} = 1.8$ and can be read individually.
+$\mathrm{VIF} = 5.31$ and \texttt{Garage\_Area} $4.87$, so 81\% and 80\% of each is predictable
+from the other features. Above the conventional threshold of 5 a coefficient is unstable,
+because the model cannot separate two overlapping measurements of the same garage provision.
+Predictive accuracy is unaffected -- only interpretation is. The other five features sit below
+$\mathrm{VIF} = 1.8$.
 
-Residual diagnostics (Figure~\ref{fig:resid}) test the assumptions behind those figures.
-Residuals average near zero and are close to normal (skew 0.42), so the model is unbiased
-overall. But the correlation between fitted value and absolute residual is 0.537: error grows
-with predicted price. This heteroscedasticity makes the model materially less precise on
-expensive properties, so the single \pounds24{,}000 MAE understates uncertainty at the top of
-the market and overstates it at the bottom. High-value valuations therefore warrant a wider
-interval than the headline figure implies; modelling $\log(\text{price})$ is the standard
-remedy.
+Residual diagnostics (Figure~\ref{fig:resid}) test the underlying assumptions. Residuals average
+near zero and are close to normal (skew 0.36), so the model is unbiased overall. But
+corr(fitted, $|$residual$|$) $= 0.438$: error grows with predicted price. This heteroscedasticity
+makes the model less precise on expensive properties, so the single MAE understates uncertainty
+at the top of the market. High-value valuations warrant a wider interval; modelling
+$\log(\text{price})$ is the standard remedy.
 
 \begin{figure}[H]
 \centering
@@ -322,7 +315,8 @@ selects $k = 11$, whereas $k = 7$ maximises test accuracy. Only the former is a 
 choice.
 
 The extreme imbalance forces a compromise. The smallest training class holds just two
-properties, capping the cross-validation at two folds.
+properties, capping the cross-validation at two folds -- too few for a stable estimate, which is
+why the selected $k$ is itself unreliable here.
 
 \begin{figure}[H]
 \centering
@@ -331,11 +325,12 @@ properties, capping the cross-validation at two folds.
 \label{fig:knn}
 \end{figure}
 
-At $k = 11$ the model achieves 54.9\% accuracy -- \emph{below} the 56.1\% majority-class
-baseline. Balanced accuracy is 0.155 and macro-F1 0.150. The per-class report shows why: grades
-2, 3, 4, 8 and 9 all score zero on precision and recall. The model has effectively learned to
-predict grade 5 and little else. Reporting only weighted F1 (0.491) would disguise this
-completely, which is precisely why macro-averaged metrics are reported alongside.
+Cross-validation selects $k = 1$, which achieves 47.6\% accuracy -- well \emph{below} the
+56.1\% majority-class baseline. Balanced accuracy is 0.163 and macro-F1 0.161. That $k=1$ wins
+is itself diagnostic: on two folds of a severely imbalanced sample, no value of $k$ separates
+the grades, so the search settles on the most flexible one. The per-class report confirms it --
+grades 2, 3, 4, 8 and 9 all score zero on both precision and recall. Reporting only weighted F1
+(0.497) would disguise this completely, which is why macro-averaged metrics are shown.
 
 \subsection{B3 -- Support Vector Machine}
 
@@ -352,19 +347,22 @@ one (Table~\ref{tab:svm}).
 \toprule
 \textbf{Kernel} & \textbf{Best params} & \textbf{CV macro-F1} & \textbf{Accuracy} & \textbf{Balanced acc.} & \textbf{Macro-F1} \\
 \midrule
-Linear   & $C=100$                & 0.154 & 0.463 & 0.283 & 0.214 \\
-RBF      & $C=100$, $\gamma=0.1$  & \textbf{0.177} & 0.512 & \textbf{0.332} & \textbf{0.323} \\
-Poly (3) & $C=1$, $\gamma$=scale  & 0.172 & 0.524 & 0.317 & 0.253 \\
+Linear   & $C=1$                  & 0.167 & 0.476 & 0.447 & 0.257 \\
+RBF      & $C=1$, $\gamma$=scale   & 0.173 & 0.512 & \textbf{0.488} & \textbf{0.333} \\
+Poly (3) & $C=1$, $\gamma$=scale   & \textbf{0.180} & 0.512 & 0.315 & 0.251 \\
 \bottomrule
 \end{tabular}
 \end{table}
 
-The comparison depends entirely on the metric. kNN wins on raw accuracy (0.549 vs 0.512); the
-RBF SVM wins decisively on balanced accuracy (0.332 vs 0.155) and macro-F1 (0.323 vs 0.150).
-Class weighting makes the SVM trade errors on the dominant grade for coverage of the rare ones,
-lowering accuracy while more than doubling macro-F1. Since the agency needs to identify
-unusually high- and low-grade properties rather than restate the most common grade, the RBF SVM
-is the better model despite its lower headline accuracy.
+Selection used cross-validated macro-F1, favouring the polynomial kernel (0.180) over RBF
+(0.173); on the test set the ranking reverses (0.333 against 0.251). With two folds and rare
+classes the CV estimate is itself noisy, and honouring a pre-declared rule sometimes means
+reporting the model that did not win on the day.
+
+Against kNN the SVM wins on every imbalance-aware metric: accuracy 0.512 vs 0.476, balanced
+accuracy 0.315 vs 0.163, macro-F1 0.251 vs 0.161. Since the agency needs to identify unusually
+high- and low-grade properties rather than restate the most common grade, the SVM is the better
+model -- though neither clears the 0.561 baseline.
 
 \begin{figure}[H]
 \centering
@@ -427,12 +425,12 @@ asserting which performs better, both were measured (Table~\ref{tab:dr}).
 \midrule
 Original (7-D) & 0.287 & 100\%   & yes & yes \\
 PCA (2-D)      & 0.420 & 61.6\%  & yes & yes \\
-t-SNE (2-D)    & \textbf{0.572} & n/a & no & no \\
+t-SNE (2-D)    & \textbf{0.568} & n/a & no & no \\
 \bottomrule
 \end{tabular}
 \end{table}
 
-t-SNE produces visually tighter groups (silhouette 0.572 against 0.420), but its axes carry no
+t-SNE produces visually tighter groups (silhouette 0.568 against 0.420), but its axes carry no
 units, between-cluster distances are not meaningful, and the layout changes with the seed and
 perplexity. PCA retains 61.6\% of variance in two components with axes interpretable as weighted
 combinations of the original features. PCA is therefore the more appropriate estimator here,
@@ -558,15 +556,13 @@ any input to performance management.
 \subsection{D1 -- Legal, Social, Ethical and Professional Issues}
 
 \textbf{Scenario 1 -- price prediction.} \emph{Legally}, property records combined with
-addresses are personal data under the UK GDPR (ICO, 2018); this dataset avoids postcode, but
-adding it -- an obvious next step -- would introduce a proxy for ethnicity and income and risk
-indirect discrimination under the Equality Act 2010. \emph{Socially}, pricing models trained on
-historical sales can entrench inequality by under-valuing property in deprived areas, so past
-disadvantage is reproduced as prediction (O'Neil, 2016). \emph{Ethically}, these models learn
-from previous human valuations and inherit any bias in them. \emph{Professionally}, the
-near-zero Rating/price correlation must be reported even though it is unflattering, and quoting
-the B1 prediction of \pounds181{,}951 without its \pounds24{,}000 error margin would
-misrepresent its precision, contrary to RICS transparency obligations (RICS, 2021).
+addresses are personal data under the UK GDPR (ICO, 2018); adding postcode -- an obvious next
+step -- would introduce a proxy for ethnicity and income, risking indirect discrimination under
+the Equality Act 2010. \emph{Socially}, models trained on historical sales entrench inequality
+by under-valuing property in deprived areas, reproducing past disadvantage as prediction
+(O'Neil, 2016). \emph{Ethically}, they inherit any bias in the human valuations they learn from.
+\emph{Professionally}, quoting the B1 prediction without its error margin would misrepresent its
+precision, contrary to RICS transparency obligations (RICS, 2021).
 
 \textbf{Scenario 2 -- expression monitoring.} \emph{Legally}, facial images processed to infer
 mental state are biometric data engaging Article 9 of the UK GDPR, requiring explicit consent
@@ -581,62 +577,58 @@ requirement to assess and disclose harms (ACM, 2018).
 \subsection{D2 -- Countermeasures}
 
 For Scenario 1: complete a DPIA before deployment; exclude postcode and other protected-
-characteristic proxies, as done here; publish prediction intervals alongside every point
-estimate; apply explainable-AI methods such as SHAP so a valuation can be justified feature by
-feature; and audit periodically for disparate impact across areas.
+characteristic proxies, as done here; publish prediction intervals with every point estimate;
+apply explainable-AI methods such as SHAP; and audit periodically for disparate impact.
 
-For Scenario 2: obtain explicit, freely given and withdrawable consent with a penalty-free
-opt-out; report only aggregates, as the C2 design does; retain a human in the loop so a flag
-triggers a conversation rather than an action; publish the measured accuracy and weakest class
-to the workforce; delete raw images once the expression score is derived; and review error
-rates across demographic groups rather than relying on one headline figure.
+For Scenario 2: obtain explicit, withdrawable consent with a penalty-free opt-out; report only
+aggregates, as the C2 design does; keep a human in the loop so a flag triggers a conversation
+rather than an action; publish the measured accuracy and weakest class to the workforce; delete
+raw images once scored; and review error rates across demographic groups.
 
 \subsection{D3 -- Intelligent Systems for the Common Good}
 
 In Scenario 1, transparent pricing models can democratise market information, giving first-time
 buyers analytical capability once confined to institutional investors, while aggregated signals
 help local authorities identify gentrification and target affordable housing. The Rating finding
-shows the wider value: data science can reveal that an established professional practice does
-not track the outcome it claims to.
+shows the wider value: data science can reveal that an established practice does not track the
+outcome it claims to.
 
 In Scenario 2, the same technology deployed with consent supports early detection of mental
-health deterioration in clinical settings, and in education can identify distressed students
-for pastoral support (D'Mello \emph{et al.}, 2017). What separates beneficial from harmful use
-is not the algorithm but who holds the output, whether participation is genuinely voluntary,
-and whether the error rate is disclosed.
+health deterioration in clinical settings, and in education can identify distressed students for
+pastoral support (D'Mello \emph{et al.}, 2017). What separates beneficial from harmful use is
+not the algorithm but who holds the output, whether participation is voluntary, and whether the
+error rate is disclosed.
 
 % =====================================================================
 \section{Section E: Conclusion and Personal Reflections}
 
 \subsection{E1 -- Conclusion}
 
-In Scenario 1, cleaning proved to be where most of the value lay: nine \texttt{Parking} values
-stored as words would have been silently destroyed by a naive numeric conversion, and since
+In Scenario 1, cleaning was where most of the value lay: nine \texttt{Parking} values stored as
+words would have been silently destroyed by a naive numeric conversion, and since
 \texttt{Parking} is the strongest price predictor ($r = 0.691$), that defect alone would have
-degraded every downstream model. Multiple linear regression explained 76--81\% of price
-variance with a mean absolute error near \pounds24{,}000 -- sufficient for indicative guidance,
-not for setting an asking price unaided.
+degraded every downstream model. Regression explained 76.3\% of price variance on the
+pre-declared split, but five-fold cross-validation put the honest figure at $0.637 \pm 0.148$:
+indicative guidance, not a basis for setting an asking price.
 
-Classification of Rating exposed the limits of the data. With grade 5 holding 56\% of records
-and three grades holding fewer than ten examples, neither kNN nor SVM beat the majority-class
-baseline on the raw eight-grade target. Re-posing the task as three bands raised macro-F1 from
-0.323 to 0.503, showing that matching the question to the resolution the data supports can
-matter more than the choice of algorithm. Clustering found two balanced market segments; t-SNE
-separated them more attractively, but PCA was selected because only its axes can be explained
-to a client.
+Classifying Rating exposed the limits of the data. With grade 5 holding 56\% of records and
+three grades holding under ten examples, neither kNN (0.476) nor SVM (0.512) beat the 0.561
+baseline. Re-posing the task as three bands raised macro-F1 from 0.251 to 0.503 -- matching the
+question to the resolution the data supports mattered more than the choice of algorithm.
+Clustering found two market segments; t-SNE separated them more attractively, but PCA was
+selected because only its axes can be explained to a client.
 
-In Scenario 2, both detection methods clearly beat chance: reference matching against a single
-exemplar reached 66.0\% accuracy and the direct classifier 72.0\%. Neutral was the weakest
-class for both, and they failed in opposite directions -- reference matching never issued a
-false Neutral but missed seven of nine true ones, while the classifier misread two genuinely
-distressed faces as Neutral. That error shaped the C2 design, where aggregate reporting, dual
-level-and-trend rules and mandatory human review follow from the measured limitations rather
-than being generic caveats.
+In Scenario 2, both methods beat chance: reference matching against a single exemplar reached
+66.0\% accuracy, the direct classifier 72.0\%. Neutral was weakest for both, and they failed in
+opposite directions -- reference matching never issued a false Neutral but missed seven of nine
+true ones, while the classifier misread two distressed faces as Neutral. That error shaped the
+C2 design, where aggregate reporting, dual level-and-trend rules and mandatory human review
+follow from measured limitations rather than generic caution.
 
 The overriding lesson is that the headline metric is rarely the honest one. Accuracy flattered
-models that had learned only to repeat the majority class; $R^2$ was highest on the least
-reliable test set; a single MAE hid that error grows with price; and a bar chart of predicted
-expressions would have looked plausible while concealing seven missed Neutral faces.
+models that had learned only to repeat the majority class; a single split overstated $R^2$ by
+twelve points; one MAE hid that error grows with price; and a bar chart of predicted expressions
+would have looked plausible while concealing seven missed Neutral faces.
 
 \subsection{E2 -- Personal Reflections}
 
@@ -651,11 +643,15 @@ data was simply wrong. Making cleaning routines report what they alter is now a 
 caught a second defect -- the column detector searched for ``year'' and never matched
 \texttt{Build}, so year of construction was silently dropped from the feature set.
 
-Evaluation taught a second lesson. My initial kNN chose $k$ by test-set accuracy, which I had
-not recognised as leakage until cross-validation disagreed with it ($k = 11$ against $k = 7$).
-Likewise I first judged the classifiers on accuracy and concluded kNN was better, until
-macro-F1 showed it scoring 0.00 on five of the eight grades. Choosing a metric is a modelling
-decision, not a reporting formality.
+Leakage taught the second lesson, twice. My initial kNN chose $k$ by test-set accuracy, which I
+did not recognise as leakage until cross-validation disagreed with it. Having fixed that, I
+found a subtler instance still in place: the \texttt{StandardScaler} was fitted on the whole
+dataset before splitting, so every model had already seen the hold-out rows' mean and variance.
+Moving preprocessing inside a \texttt{Pipeline} changed both the scores and the selected
+hyperparameters. Leakage is not one mistake to check off but a category to design against, which
+is what pipelines exist for. Relatedly, I first judged the classifiers on accuracy and concluded
+kNN was better, until macro-F1 showed it scoring 0.00 on five of the eight grades: choosing a
+metric is a modelling decision, not a reporting formality.
 
 A third came from my own C2 simulation. I wrote the expression-probability weights as a
 positional list, but the labels were sorted alphabetically, so the ``calm'' weight landed on
@@ -663,16 +659,14 @@ Angry and the stress model ran backwards -- employees scripted to deteriorate ap
 improve, with entirely plausible-looking output. Keying the weights by name removed the whole
 class of bug, teaching me to prefer constructs in which the mistake cannot be expressed.
 
-Technically I gained fluency in pandas, in building and evaluating supervised and unsupervised
-models with scikit-learn, and in applying pre-trained transformers through Hugging Face --
-including extracting intermediate embeddings for one-shot matching rather than only consuming
-the final classification head. Dependency management proved as consequential as modelling: an
-early attempt to use DeepFace failed because it required TensorFlow, which had no build for my
-Python version, and I resolved it with a PyTorch-only Vision Transformer.
-
-Most valuable was learning scepticism about my own results. The habit I am taking forward is
-checking every plausible answer against a baseline, because a model producing sensible-looking
-numbers while learning nothing is far more dangerous than one that visibly fails.
+Technically I gained fluency in pandas, in scikit-learn pipelines, and in applying pre-trained
+transformers through Hugging Face, including extracting intermediate embeddings for one-shot
+matching rather than only using the classification head. Dependency management proved as
+consequential as modelling: DeepFace required TensorFlow, which had no build for my Python
+version, so I moved to a PyTorch-only Vision Transformer. Above all I learned scepticism about
+my own results, and the habit I am taking forward is checking every plausible answer against a
+baseline -- because a model producing sensible-looking numbers while learning nothing is more
+dangerous than one that visibly fails.
 
 % =====================================================================
 \section*{References}
