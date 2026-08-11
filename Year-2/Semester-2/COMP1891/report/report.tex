@@ -21,7 +21,16 @@
 \usepackage{amsmath}
 \usepackage{caption}
 \usepackage{float}
-\usepackage[hidelinks]{hyperref}
+\usepackage{hyperref}
+% External URLs are coloured so they read as clickable; internal cross-references
+% and the contents list stay black, which keeps the body text calm.
+\hypersetup{
+  colorlinks = true,
+  urlcolor   = [HTML]{1A5FB4},
+  linkcolor  = black,
+  citecolor  = black,
+  breaklinks = true,
+}
 \usepackage{xcolor}
 
 \graphicspath{{../figures/}{../}{./}}
