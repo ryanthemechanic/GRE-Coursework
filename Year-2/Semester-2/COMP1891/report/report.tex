@@ -222,8 +222,8 @@ accuracy while learning nothing.
 % =====================================================================
 \section{Section B: AI and Machine Learning (Scenario 1)}
 
-All models use the same seven predictors inside a \texttt{Pipeline} of median imputation,
-standardisation and the estimator. Placing preprocessing in the pipeline matters: fitted once on
+All models are built with scikit-learn (Pedregosa \emph{et al.}, 2011), using the same seven
+predictors inside a \texttt{Pipeline} of median imputation, standardisation and the estimator. Placing preprocessing in the pipeline matters: fitted once on
 the full dataset, the scaler and imputer would learn the hold-out rows' statistics and leak them
 into training. Measured on the banded task of B3.3, that leakage inflated cross-validated
 macro-F1 from 0.469 to 0.497 and selected a different $k$. Inside a pipeline both steps refit on
@@ -556,7 +556,7 @@ any input to performance management.
 \subsection{D1 -- Legal, Social, Ethical and Professional Issues}
 
 \textbf{Scenario 1 -- price prediction.} \emph{Legally}, property records combined with
-addresses are personal data under the UK GDPR (ICO, 2018); adding postcode -- an obvious next
+addresses are personal data under the UK GDPR (ICO, 2021); adding postcode -- an obvious next
 step -- would introduce a proxy for ethnicity and income, risking indirect discrimination under
 the Equality Act 2010. \emph{Socially}, models trained on historical sales entrench inequality
 by under-valuing property in deprived areas, reproducing past disadvantage as prediction
@@ -567,8 +567,9 @@ precision, contrary to RICS transparency obligations (RICS, 2021).
 \textbf{Scenario 2 -- expression monitoring.} \emph{Legally}, facial images processed to infer
 mental state are biometric data engaging Article 9 of the UK GDPR, requiring explicit consent
 and a Data Protection Impact Assessment (ICO, 2011). \emph{Socially}, continuous monitoring
-erodes psychological safety, and expression norms vary across cultures and with
-neurodivergence, so a uniform model misreads some groups more than others. \emph{Ethically},
+erodes psychological safety and normalises workplace surveillance (Zuboff, 2019), and
+expression norms vary across cultures and with neurodivergence, so a uniform model misreads
+some groups more than others. \emph{Ethically},
 employee consent may not be freely given, since refusal carries perceived career risk (Floridi
 \emph{et al.}, 2018). \emph{Professionally}, presenting a 72\%-accurate classifier -- one that
 misread two distressed faces as Neutral in 50 images -- as reliable would breach the ACM
@@ -675,18 +676,19 @@ dangerous than one that visibly fails.
 \begin{description}
 \item ACM (2018) \emph{ACM Code of Ethics and Professional Conduct}. Available at:
 \url{https://www.acm.org/code-of-ethics} (Accessed: 10 August 2026).
-\item Barocas, S. and Hardt, M. (2017) \emph{Fairness in Machine Learning}. Available at:
-\url{https://fairmlbook.org} (Accessed: 10 August 2026).
 \item D'Mello, S.K., Dieterle, E. and Duckworth, A. (2017) `Advanced, analytic, automated (AAA)
 measurement of engagement during learning', \emph{Educational Psychologist}, 52(2), pp.~104--123.
+
 \item Floridi, L., Cowls, J., Beltrametti, M., Chatila, R., Chazerand, P., Dignum, V., Luetge,
 C., Madelin, R., Pagallo, U., Rossi, F., Schafer, B., Valcke, P. and Vayena, E. (2018)
-`AI4People -- an ethical framework for a good AI society', \emph{Minds and Machines}, 28(4),
-pp.~689--707.
+`AI4People -- an ethical framework for a good AI society: opportunities, risks, principles, and
+recommendations', \emph{Minds and Machines}, 28(4), pp.~689--707.
 \item ICO (2011) \emph{The Employment Practices Code}. Wilmslow: Information Commissioner's
 Office.
-\item ICO (2018) \emph{Guide to the UK General Data Protection Regulation}. Wilmslow:
-Information Commissioner's Office.
+\item ICO (2021) \emph{Guide to the UK General Data Protection Regulation}. Wilmslow:
+Information Commissioner's Office. Available at:
+\url{https://ico.org.uk/for-organisations/uk-gdpr-guidance-and-resources/}
+(Accessed: 11 August 2026).
 \item O'Neil, C. (2016) \emph{Weapons of Math Destruction: How Big Data Increases Inequality and
 Threatens Democracy}. New York: Crown Publishers.
 \item Pedregosa, F., Varoquaux, G., Gramfort, A. \emph{et al.} (2011) `Scikit-learn: machine
