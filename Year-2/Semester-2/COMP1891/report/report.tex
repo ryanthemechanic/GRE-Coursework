@@ -1,0 +1,679 @@
+% COMP1891 (2025/2026) - Applications in AI and Data Science
+% Coursework report. Marked anonymously: do not add name, student ID or any
+% other identifying detail to this file.
+%
+% Build:  pdflatex report.tex   (run twice for references/TOC)
+% Figures are read from the parent directory, where the notebook writes them.
+
+\documentclass[11pt,a4paper]{article}
+
+\usepackage[margin=2.5cm]{geometry}
+\usepackage{graphicx}
+\usepackage{booktabs}
+\usepackage{amsmath}
+\usepackage{caption}
+\usepackage{float}
+\usepackage[hidelinks]{hyperref}
+\usepackage{xcolor}
+
+\graphicspath{{../}{./}}
+\captionsetup{font=small,labelfont=bf}
+
+\title{\vspace{-1.5cm}\textbf{Applications in AI and Data Science}\\[0.3em]
+\large Coursework Report: Property Price Analytics and Facial Expression Detection}
+\author{COMP1891 (2025/2026)}
+\date{Banner ID: \underline{\hspace{3cm}}}
+
+\begin{document}
+\maketitle
+
+\begin{abstract}
+\noindent This report applies a complete data science and machine learning workflow to two
+business scenarios: a 350-record estate agency dataset used to model residential property
+prices, and a sample of 50 facial images supporting a workplace wellbeing initiative. All
+results are produced by the accompanying notebook \texttt{COMP1891\_notebook.ipynb}, whose
+cell headings match the section numbers used here.
+\end{abstract}
+
+\tableofcontents
+\vspace{0.5em}
+\hrule
+
+% =====================================================================
+\section{Section A: Data Science (Scenario 1)}
+
+\subsection{A1 -- Exploratory Data Analysis}
+
+The supplied file \texttt{Estate\_Agent.csv} contains 350 records and nine columns. It is
+semicolon-delimited rather than comma-delimited, so the loader detects the separator from the
+header line instead of assuming a default; read with the wrong separator the file collapses
+into a single unusable column.
+
+The nine columns divide into three roles. \texttt{House\_Price} is the regression target.
+\texttt{Rating} is an ordinal quality grade used as the classification target in Section B.
+The remaining seven -- \texttt{House\_Area}, \texttt{Build} (year of construction),
+\texttt{No\_of\_Bathrooms}, \texttt{No\_of\_Bedrooms}, \texttt{Garage\_Area},
+\texttt{Living\_Space} and \texttt{Parking} -- are predictors describing the physical property.
+
+All seven predictors are retained, on two tests: does the feature describe the property, and
+does it carry signal? Table~\ref{tab:corr} shows every predictor correlating with price at
+$|r| \geq 0.15$, and none is a proxy for a protected characteristic -- there is no postcode,
+neighbourhood or demographic column, which materially reduces the discrimination risk
+discussed in Section D. \texttt{Rating} is deliberately excluded: it correlates with price at
+$r = -0.045$, and is a subjective assessment rather than a physical measurement, so including
+it would make the model depend on a human judgement the agency wants to benchmark.
+
+\begin{table}[H]
+\centering
+\small
+\caption{Pearson correlation with \texttt{House\_Price} (after cleaning).}
+\label{tab:corr}
+\begin{tabular}{lc}
+\toprule
+\textbf{Feature} & \textbf{$r$ with House\_Price} \\
+\midrule
+Parking            & 0.691 \\
+Garage\_Area       & 0.680 \\
+Living\_Space      & 0.608 \\
+No\_of\_Bathrooms  & 0.531 \\
+Build              & 0.531 \\
+House\_Area        & 0.286 \\
+No\_of\_Bedrooms   & 0.156 \\
+Rating             & $-0.045$ \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+The strongest predictor is \texttt{Parking} ($r=0.691$), narrowly ahead of
+\texttt{Garage\_Area} ($r=0.680$). Both measure the same underlying attribute -- garage
+capacity as a count and as an area -- and are strongly correlated with each other, which
+matters for interpreting the regression coefficients in Section B1.
+
+The most commercially significant finding is the near-zero correlation between \texttt{Rating}
+and price: the agency's own quality grade does not predict what a property sells for. Either
+the grade captures something buyers do not pay for, or it is applied inconsistently, and both
+readings recommend reviewing the grading process before relying on it for pricing strategy.
+Figure~\ref{fig:corr} presents the full correlation matrix.
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.78\textwidth]{A1_correlation_heatmap.png}
+\caption{A1 -- Correlation matrix of all numeric features.}
+\label{fig:corr}
+\end{figure}
+
+\subsection{A2 -- Data Cleaning}
+
+The raw data is not analytics-ready. Four distinct defects were found and corrected.
+
+\textbf{Formatting errors in a numeric column.} \texttt{Parking} is stored as text and mixes
+digits with written words: nine records hold \texttt{One} (4), \texttt{Two} (3) or
+\texttt{Three} (2). A naive conversion turns all nine into missing values, which median
+imputation then silently overwrites with plausible-looking numbers. Since \texttt{Parking} is
+the strongest price predictor, this is the most damaging defect in the file. The cleaning
+routine maps written numbers to integers before conversion and reports what it changed.
+
+\textbf{Duplicate records.} Four exact duplicates were removed (350 $\rightarrow$ 346). They
+bias every statistic and can leak the same property into both training and test sets.
+
+\textbf{Missing values.} Four columns had gaps: \texttt{Living\_Space} (5), \texttt{Garage\_Area}
+(3), \texttt{No\_of\_Bathrooms} (2) and \texttt{No\_of\_Bedrooms} (2), never more than 1.4\% of
+any column. Median imputation was used rather than mean because the area columns are
+right-skewed, and the median is not dragged by the upper tail.
+
+\textbf{Outliers.} Treatment was matched to each column rather than applied as one blanket rule
+(Table~\ref{tab:outliers}). Price uses the conventional $1.5\times$IQR fence, excluding 14
+records. The area columns are naturally right-skewed -- large plots are genuine, not erroneous
+-- so the same rule would discard 17 valid properties from \texttt{House\_Area} alone. A
+$3\times$IQR fence was used there, removing only the 5 implausible extremes, including one plot
+of 159{,}000 square feet against a median of 9{,}378. The data falls from 346 to 327 rows.
+
+\begin{table}[H]
+\centering
+\small
+\caption{Outlier audit. The applied rule is shown in bold.}
+\label{tab:outliers}
+\begin{tabular}{lccccc}
+\toprule
+\textbf{Column} & \textbf{Fence} & \textbf{Lower} & \textbf{Upper} & \textbf{Outliers} & \textbf{\% of rows} \\
+\midrule
+House\_Price  & \textbf{1.5 IQR} & 688 & 343{,}188 & \textbf{14} & 4.0 \\
+House\_Price  & 3.0 IQR & $-127{,}750$ & 471{,}625 & 2 & 0.6 \\
+House\_Area   & 1.5 IQR & 1{,}603 & 17{,}569 & 17 & 4.9 \\
+House\_Area   & \textbf{3.0 IQR} & $-4{,}384$ & 23{,}556 & \textbf{6} & 1.7 \\
+Living\_Space & 1.5 IQR & 173 & 2{,}075 & 5 & 1.4 \\
+Garage\_Area  & 1.5 IQR & $-63$ & 959 & 3 & 0.9 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.85\textwidth]{A2_outlier_boxplot.png}
+\caption{A2 -- Price distribution before and after outlier removal.}
+\label{fig:outlier}
+\end{figure}
+
+\subsection{A3 -- Data Visualisation}
+
+Each visualisation was chosen to answer a specific question rather than to display the data
+generically.
+
+\textbf{Price distribution (Figure~\ref{fig:price}).} Linear regression assumes approximately
+normal residuals, and a histogram paired with a Q--Q plot tests that assumption directly.
+Post-cleaning skewness is 0.707 -- below the $|{\text{skew}}| > 1$ threshold at which a log
+transformation would normally be applied, so price was modelled untransformed.
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.85\textwidth]{A3_price_distribution.png}
+\caption{A3.1 -- Price histogram and Q--Q plot.}
+\label{fig:price}
+\end{figure}
+
+\textbf{Feature distributions (Figure~\ref{fig:dist}).} Count and continuous variables are
+plotted differently. Bedrooms, bathrooms, rating and parking take only a handful of
+whole-number values, so drawing them as histograms creates meaningless fractional bins and
+hides how uneven the categories are; they are drawn as category bars annotated with the share
+held by the largest level, while continuous features keep histograms annotated with skewness.
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=\textwidth]{A3_feature_distributions.png}
+\caption{A3.2 -- Feature distributions, split by variable type.}
+\label{fig:dist}
+\end{figure}
+
+\textbf{Price against the leading predictors (Figure~\ref{fig:scatter}).} Scatter plots with a
+fitted trend line test whether the relationship that the correlation coefficient summarises is
+genuinely linear, since a single correlation value cannot distinguish a linear relationship
+from a curved one.
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.85\textwidth]{A3_scatter_price.png}
+\caption{A3.3 -- Price against the two most correlated features.}
+\label{fig:scatter}
+\end{figure}
+
+\textbf{Price by category (Figure~\ref{fig:box})} shows how price disperses across grades and
+bedroom counts, with group sizes printed on the axis so that a wide box resting on three
+properties is not mistaken for a reliable pattern. It confirms visually what
+Table~\ref{tab:corr} states numerically: median price does not climb consistently with rating.
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.85\textwidth]{A3_boxplots.png}
+\caption{A3.4 -- Price by rating and by bedroom count ($n$ shown per group).}
+\label{fig:box}
+\end{figure}
+
+\textbf{Class balance (Figure~\ref{fig:balance}).} Because \texttt{Rating} is the target in
+Sections B2 and B3, its balance was examined before any model was fitted. Grade 5 holds 56.0\%
+of properties, the imbalance ratio is 61:1, and grades 2, 3 and 9 have fewer than ten examples
+each. This chart determines the choice of metric throughout Section B: a model predicting grade
+5 unconditionally already scores 56\% accuracy while learning nothing.
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.72\textwidth]{A3_class_balance.png}
+\caption{A3.6 -- Rating class imbalance. Red bars fall below a usable sample size.}
+\label{fig:balance}
+\end{figure}
+
+% =====================================================================
+\section{Section B: AI and Machine Learning (Scenario 1)}
+
+All models use the same seven predictors, standardised with \texttt{StandardScaler}. Scaling is
+essential for kNN and SVM, which measure distances, and harmless for linear regression.
+
+\subsection{B1 -- Multiple Linear Regression}
+
+Three train/test splits were evaluated (Table~\ref{tab:lr}). Three metrics are reported
+together because each answers a different question: MAE gives the average error in pounds and
+is what a client would understand; RMSE penalises large errors more heavily and so exposes
+occasional bad predictions; $R^2$ states the proportion of price variance explained.
+
+\begin{table}[H]
+\centering
+\small
+\caption{B1 -- Linear regression across three train/test splits.}
+\label{tab:lr}
+\begin{tabular}{lccccc}
+\toprule
+\textbf{Split} & \textbf{Train} & \textbf{Test} & \textbf{MAE} & \textbf{RMSE} & \textbf{$R^2$} \\
+\midrule
+70/30 & 228 & 99 & 23{,}702.69 & 31{,}972.23 & 0.76 \\
+80/20 & 261 & 66 & 24{,}111.50 & 31{,}917.46 & 0.76 \\
+90/10 & 294 & 33 & 23{,}772.38 & 30{,}314.87 & 0.81 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+The model explains 76--81\% of price variance with a typical error near \pounds24{,}000 on a
+median price of roughly \pounds164{,}000 -- around 15\%, useful for initial guidance but not
+precise enough to set an asking price unaided. Performance is stable across splits, indicating
+the model is not sensitive to how the data is divided.
+
+The 90/10 split reports the highest $R^2$ (0.81), but this is not the best model: its test set
+holds only 33 properties, making it the least reliable estimate of the three, and the apparent
+gain is a small-sample artefact. The 70/30 and 80/20 results, agreeing at $R^2 = 0.76$, are the
+more trustworthy estimate of real-world performance.
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=\textwidth]{B1_regression.png}
+\caption{B1 -- Predicted against actual price for each split.}
+\label{fig:reg}
+\end{figure}
+
+Figure~\ref{fig:coef} shows the fitted coefficients. These must be read with care: as noted in
+A1, \texttt{Parking} and \texttt{Garage\_Area} both measure garage provision and are strongly
+correlated, so the regression distributes credit between them somewhat arbitrarily. Their
+individual coefficients are therefore not a safe guide to the value of an extra parking space,
+even though their combined contribution to prediction is sound.
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.7\textwidth]{B1_coefficients.png}
+\caption{B1 -- Standardised feature coefficients.}
+\label{fig:coef}
+\end{figure}
+
+Applying the model to a median property (9{,}180 sq ft plot, built 1972, 2 bathrooms,
+3 bedrooms, 454 sq ft garage, 1{,}085 sq ft living space, 2 parking spaces) predicts
+\textbf{\pounds181{,}951}. Given the MAE, this should be quoted to a client as approximately
+\pounds182{,}000 $\pm$ \pounds24{,}000 rather than as a point figure.
+
+\subsection{B2 -- k-Nearest Neighbours}
+
+$k$ was tuned across $k = 1 \ldots 25$ using stratified cross-validation on the training set
+only. Selecting $k$ by test-set accuracy -- a common shortcut -- leaks the test data into model
+selection and produces an optimistic score. The difference is visible here: cross-validation
+selects $k = 11$, whereas $k = 7$ maximises test accuracy. Only the former is a legitimate
+choice.
+
+The extreme imbalance forces a compromise. The smallest training class holds just two
+properties, capping the cross-validation at two folds.
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.8\textwidth]{B2_knn_tuning.png}
+\caption{B2 -- kNN tuning. Selection uses the cross-validated curve, not the test curve.}
+\label{fig:knn}
+\end{figure}
+
+At $k = 11$ the model achieves 54.9\% accuracy -- \emph{below} the 56.1\% majority-class
+baseline. Balanced accuracy is 0.155 and macro-F1 0.150. The per-class report shows why: grades
+2, 3, 4, 8 and 9 all score zero on precision and recall. The model has effectively learned to
+predict grade 5 and little else. Reporting only weighted F1 (0.491) would disguise this
+completely, which is precisely why macro-averaged metrics are reported alongside.
+
+\subsection{B3 -- Support Vector Machine}
+
+Three kernels were tuned over $C$ (and $\gamma$) by cross-validation, with
+\texttt{class\_weight='balanced'} so that rare grades are not discarded in favour of the
+dominant one (Table~\ref{tab:svm}).
+
+\begin{table}[H]
+\centering
+\small
+\caption{B3 -- Tuned, class-balanced SVM by kernel.}
+\label{tab:svm}
+\begin{tabular}{lccccc}
+\toprule
+\textbf{Kernel} & \textbf{Best params} & \textbf{CV macro-F1} & \textbf{Accuracy} & \textbf{Balanced acc.} & \textbf{Macro-F1} \\
+\midrule
+Linear   & $C=100$                & 0.154 & 0.463 & 0.283 & 0.214 \\
+RBF      & $C=100$, $\gamma=0.1$  & \textbf{0.177} & 0.512 & \textbf{0.332} & \textbf{0.323} \\
+Poly (3) & $C=1$, $\gamma$=scale  & 0.172 & 0.524 & 0.317 & 0.253 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+The kNN/SVM comparison depends entirely on which metric is chosen. kNN wins on raw accuracy
+(0.549 vs 0.512); the RBF SVM wins decisively on balanced accuracy (0.332 vs 0.155) and
+macro-F1 (0.323 vs 0.150). Class weighting causes the SVM to trade errors on the dominant grade
+for coverage of the rare ones, which lowers accuracy while more than doubling macro-F1. Since
+the agency's interest lies in identifying unusually high- and low-grade properties rather than
+in restating the most common grade, the RBF SVM is the better model despite its lower headline
+accuracy.
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.9\textwidth]{B3_comparison.png}
+\caption{B3 -- kNN against SVM across four metrics, with the majority-class baseline.}
+\label{fig:cmp}
+\end{figure}
+
+\textbf{Addressing the imbalance.} Neither model beats the baseline convincingly, because
+grades with three to five examples cannot be learned. Grouping the eight grades into three
+commercially meaningful bands -- Low ($\leq 4$, $n=22$), Mid (5--6, $n=241$) and High
+($\geq 7$, $n=64$) -- keeps the business question intact while giving every class usable
+support, and restores full 5-fold cross-validation. Macro-F1 rises from 0.323 to 0.503
+(Table~\ref{tab:band}).
+
+\begin{table}[H]
+\centering
+\small
+\caption{B3.3 -- Banded rating target (baseline accuracy 0.732).}
+\label{tab:band}
+\begin{tabular}{lccc}
+\toprule
+\textbf{Model} & \textbf{Accuracy} & \textbf{Balanced acc.} & \textbf{Macro-F1} \\
+\midrule
+kNN ($k=5$)                       & 0.683 & 0.422 & 0.436 \\
+SVM (RBF, $C=10$, $\gamma=0.1$)   & 0.634 & \textbf{0.561} & \textbf{0.503} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+The improvement does not come from a smarter model; it comes from asking the question at a
+resolution the data can support. An estate agent advised on whether a property is a low, mid or
+high grade asset is well served. A claim to separate grade 8 from grade 9 on three examples is
+not defensible.
+
+\subsection{B4 -- Clustering and Dimensionality Reduction}
+
+$k$-means was run for $k = 2 \ldots 10$ and evaluated by the elbow method and silhouette score.
+The silhouette peaks at $k = 2$ (0.287), giving two balanced segments of 161 and 166
+properties -- broadly a smaller/older and a larger/newer segment.
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.85\textwidth]{B4_elbow_silhouette.png}
+\caption{B4 -- Elbow and silhouette curves.}
+\label{fig:elbow}
+\end{figure}
+
+Both PCA and t-SNE were applied to project the seven features into two dimensions. Rather than
+asserting which performs better, both were measured (Table~\ref{tab:dr}).
+
+\begin{table}[H]
+\centering
+\small
+\caption{B4 -- PCA against t-SNE.}
+\label{tab:dr}
+\begin{tabular}{lcccc}
+\toprule
+\textbf{Space} & \textbf{Silhouette} & \textbf{Variance retained} & \textbf{Interpretable axes} & \textbf{Deterministic} \\
+\midrule
+Original (7-D) & 0.287 & 100\%   & yes & yes \\
+PCA (2-D)      & 0.420 & 61.6\%  & yes & yes \\
+t-SNE (2-D)    & \textbf{0.572} & n/a & no & no \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+t-SNE produces visually tighter groups (silhouette 0.572 against 0.420), but its axes carry no
+units, between-cluster distances are not meaningful, and the layout changes with the seed and
+perplexity. PCA retains 61.6\% of variance in two components with axes interpretable as weighted
+combinations of the original features. PCA is therefore the more appropriate estimator here,
+because the agency must explain to a client \emph{why} a property falls into a segment; t-SNE
+remains better for the narrower task of confirming visually that two separable segments exist.
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.49\textwidth]{B4_pca_clusters.png}
+\hfill
+\includegraphics[width=0.49\textwidth]{B4_tsne_clusters.png}
+\caption{B4 -- Clusters under PCA (left) and t-SNE (right).}
+\label{fig:dr}
+\end{figure}
+
+% =====================================================================
+\section{Section C: AI -- Facial Expression Detection (Scenario 2)}
+
+\subsection{C1 -- Detection and Measured Accuracy}
+
+Fifty images in \texttt{FacesSample} were classified into the six expressions named in the
+brief: Surprised, Angry, Happy, Sad, Frightful and Neutral. An \texttt{Expressions} folder
+holding one self-selected reference image per expression was created as required. Crucially,
+the sample ships with ground-truth labels (\texttt{groundtruth.json}), so detection success is
+\emph{measured} rather than estimated by eye.
+
+Two methods were implemented and compared. Both use \texttt{trpakov/vit-face-expression}, a
+Vision Transformer fine-tuned on facial expressions.
+
+\begin{itemize}
+\item \textbf{Method 1 -- reference matching.} Every image is represented by its 768-dimension
+CLS embedding, and each sample image takes the label of the most cosine-similar reference image.
+This uses the \texttt{Expressions} folder as the task specifies, and is one-shot learning: a
+single exemplar per class.
+\item \textbf{Method 2 -- direct classification.} The same network's 7-way softmax head predicts
+the expression directly, having been trained on thousands of labelled faces. Its \texttt{disgust}
+output has no counterpart in the brief and is folded into Angry.
+\end{itemize}
+
+\begin{table}[H]
+\centering
+\small
+\caption{C1 -- Detection accuracy against ground truth ($n = 50$).}
+\label{tab:c1}
+\begin{tabular}{lccc}
+\toprule
+\textbf{Method} & \textbf{Accuracy} & \textbf{Balanced acc.} & \textbf{Macro-F1} \\
+\midrule
+Random guess (6 classes)     & 0.167 & --    & --    \\
+Majority class               & 0.260 & --    & --    \\
+Method 1 -- reference match  & 0.660 & 0.592 & 0.570 \\
+Method 2 -- ViT classifier   & \textbf{0.720} & \textbf{0.708} & \textbf{0.684} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\textbf{How successful is the detection?} Both methods substantially beat the 26.0\%
+majority-class baseline, so both genuinely detect expression. Method 2 reaches 72.0\% accuracy;
+Method 1 reaches 66.0\%, a strong result for learning each expression from exactly one example,
+confirming that the embedding space groups faces by expression rather than by identity or
+lighting. The 6-point gap is the price of one-shot learning: with a single reference per class,
+an unrepresentative exemplar harms an entire category. Method 1 scores 0.00 F1 on Frightful,
+failing all four frightful faces because its single reference does not resemble them, while
+Method 2 recovers them at 0.75 recall.
+
+\textbf{Are any images wrongly detected as Neutral?} The methods fail in opposite directions.
+Method 1 never wrongly assigns Neutral, but misses seven of the nine true Neutral faces --
+recall of just 0.22. Method 2 wrongly labels two images Neutral, \texttt{fig109.jpg} (truly
+Angry) and \texttt{fig145.jpg} (truly Sad), and misses six true Neutrals, for 0.33 recall.
+
+Neutral is the hardest class for both, which is intuitive: it is defined by the \emph{absence}
+of expression, so any weak or partial expression sits close to it, and a low-intensity angry or
+sad face is genuinely near-neutral in appearance. This matters for the wellbeing application,
+where misreading distress as neutral is exactly the error of greatest consequence.
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=\textwidth]{C1_confusion_matrices.png}
+\caption{C1 -- Confusion matrices for both methods against ground truth.}
+\label{fig:c1cm}
+\end{figure}
+
+Prediction confidence is a usable safeguard. Method 2 is 72.9\% accurate when its confidence is
+at least 0.40, but only 50.0\% below it. Low-confidence predictions can therefore be routed for
+human review rather than acted on automatically.
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.9\textwidth]{C1_false_neutrals.png}
+\caption{C1 -- Images wrongly detected as Neutral.}
+\label{fig:neut}
+\end{figure}
+
+\subsection{C2 -- Application: Aggregated Wellbeing Monitoring}
+
+C1 turns a face into a label. C2 models the operational system that would sit on top of it for
+the corporate health and wellness initiative. Expressions are mapped to a stress weight (Happy
+0.0 through Angry 0.9), averaged per employee per week over four weeks, and screened by two
+rules: a \emph{level} rule (weekly mean above 0.55) and a \emph{trend} rule (a rise above 0.15
+from the first week to the last).
+
+Two rules are needed because they catch different problems. The level rule finds employees who
+are consistently under strain; the trend rule catches deterioration early, flagging employees
+whose absolute score is still moderate but climbing. In the simulation the trend rule flags two
+employees rising by 0.32 and 0.36 whom the level rule alone would have missed until later.
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=\textwidth]{C2_wellbeing_monitor.png}
+\caption{C2 -- Weekly aggregated stress and trend detection.}
+\label{fig:c2}
+\end{figure}
+
+The design is constrained by the ethics discussed in Section D and by the measured accuracy in
+C1. Rules operate on weekly aggregates, never on individual daily readings; managers see the
+team average and the number of employees flagged, not the per-person matrix; participation is
+opt-in and withdrawable. Because C1 measured only 72\% accuracy with Neutral the weakest class,
+a flag prompts an \emph{offer} of a voluntary check-in and never an automated intervention or
+any input to performance management.
+
+% =====================================================================
+\section{Section D: AI and LSEPI}
+
+\subsection{D1 -- Legal, Social, Ethical and Professional Issues}
+
+\textbf{Scenario 1 -- price prediction.} \emph{Legally}, property records combined with
+addresses are personal data under the UK GDPR (ICO, 2018); this dataset avoids postcode, but
+adding it -- an obvious next step -- would introduce a proxy for ethnicity and income and risk
+indirect discrimination under the Equality Act 2010. \emph{Socially}, pricing models trained on
+historical sales can entrench inequality by under-valuing property in deprived areas, so past
+disadvantage is reproduced as prediction (O'Neil, 2016). \emph{Ethically}, these models learn
+from previous human valuations and inherit any bias in them. \emph{Professionally}, the
+near-zero Rating/price correlation must be reported even though it is unflattering, and quoting
+the B1 prediction of \pounds181{,}951 without its \pounds24{,}000 error margin would
+misrepresent its precision, contrary to RICS transparency obligations (RICS, 2021).
+
+\textbf{Scenario 2 -- expression monitoring.} \emph{Legally}, facial images processed to infer
+mental state are biometric data engaging Article 9 of the UK GDPR, requiring explicit consent
+and a Data Protection Impact Assessment (ICO, 2011). \emph{Socially}, continuous monitoring
+erodes psychological safety, and expression norms vary across cultures and with
+neurodivergence, so a uniform model misreads some groups more than others. \emph{Ethically},
+employee consent may not be freely given, since refusal carries perceived career risk (Floridi
+\emph{et al.}, 2018). \emph{Professionally}, presenting a 72\%-accurate classifier -- one that
+misread two distressed faces as Neutral in 50 images -- as reliable would breach the ACM
+requirement to assess and disclose harms (ACM, 2018).
+
+\subsection{D2 -- Countermeasures}
+
+For Scenario 1: complete a DPIA before deployment; exclude postcode and other protected-
+characteristic proxies, as done here; publish prediction intervals alongside every point
+estimate; apply explainable-AI methods such as SHAP so a valuation can be justified feature by
+feature; and audit periodically for disparate impact across areas.
+
+For Scenario 2: obtain explicit, freely given and withdrawable consent with a penalty-free
+opt-out; report only aggregates, as the C2 design does; retain a human in the loop so a flag
+triggers a conversation rather than an action; publish the measured accuracy and weakest class
+to the workforce; delete raw images once the expression score is derived; and review error
+rates across demographic groups rather than relying on one headline figure.
+
+\subsection{D3 -- Intelligent Systems for the Common Good}
+
+In Scenario 1, transparent pricing models can democratise market information, giving first-time
+buyers analytical capability previously confined to institutional investors, while aggregated
+signals help local authorities identify gentrification and target affordable housing. The
+Rating finding shows the wider value: data science can reveal that an established professional
+practice does not track the outcome it claims to.
+
+In Scenario 2, the same technology deployed with consent supports early detection of mental
+health deterioration in clinical settings, and in education can identify distressed students
+for pastoral support (D'Mello \emph{et al.}, 2017). What separates beneficial from harmful use
+is not the algorithm but who holds the output, whether participation is genuinely voluntary,
+and whether the error rate is disclosed.
+
+% =====================================================================
+\section{Section E: Conclusion and Personal Reflections}
+
+\subsection{E1 -- Conclusion}
+
+In Scenario 1, cleaning proved to be where most of the value lay: nine \texttt{Parking} values
+stored as words would have been silently destroyed by a naive numeric conversion, and since
+\texttt{Parking} is the strongest price predictor ($r = 0.691$), that defect alone would have
+degraded every downstream model. Multiple linear regression explained 76--81\% of price
+variance with a mean absolute error near \pounds24{,}000 -- sufficient for indicative guidance,
+not for setting an asking price unaided.
+
+Classification of Rating exposed the limits of the data. With grade 5 holding 56\% of records
+and three grades holding fewer than ten examples, neither kNN nor SVM beat the majority-class
+baseline on the raw eight-grade target. Re-posing the task as three bands raised macro-F1 from
+0.323 to 0.503, showing that matching the question to the resolution the data supports can
+matter more than the choice of algorithm. Clustering found two balanced market segments; t-SNE
+separated them more attractively, but PCA was selected because only its axes can be explained
+to a client.
+
+In Scenario 2, both detection methods clearly beat chance: reference matching against a single
+exemplar reached 66.0\% accuracy and the direct classifier 72.0\%. Neutral was the weakest
+class for both, and they failed in opposite directions -- reference matching never issued a
+false Neutral but missed seven of nine true ones, while the classifier misread two genuinely
+distressed faces as Neutral. That error shaped the C2 design, where aggregate reporting, dual
+level-and-trend rules and mandatory human review follow from the measured limitations rather
+than being generic caveats.
+
+The overriding lesson is that the headline metric is rarely the honest one. Accuracy flattered
+models that had learned only to repeat the majority class; $R^2$ was highest on the split with
+the least reliable test set; and a bar chart of predicted expressions would have looked
+plausible while concealing seven missed Neutral faces.
+
+\subsection{E2 -- Personal Reflections}
+
+The most instructive problems here were not the modelling steps but the points where code ran
+successfully and produced wrong answers.
+
+The clearest was the \texttt{Parking} column. My first cleaning routine converted it to numeric
+without error and reported no missing values afterwards. Only when I printed what the
+conversion had \emph{changed} did I find that nine values reading \texttt{One}, \texttt{Two}
+and \texttt{Three} had become NaN and then been overwritten by the median. Nothing failed; the
+data was simply wrong. Making cleaning routines report what they alter is now a habit, and it
+caught a second defect -- the column detector searched for ``year'' and never matched
+\texttt{Build}, so year of construction was silently dropped from the feature set.
+
+Evaluation taught a second lesson. My initial kNN chose $k$ by test-set accuracy, which I had
+not recognised as leakage until cross-validation disagreed with it ($k = 11$ against $k = 7$).
+Likewise I first judged the classifiers on accuracy and concluded kNN was better, until
+macro-F1 showed it scoring 0.00 on five of the eight grades. Choosing a metric is a modelling
+decision, not a reporting formality.
+
+A third came from my own C2 simulation. I wrote the expression-probability weights as a
+positional list, but the labels were sorted alphabetically, so the ``calm'' weight landed on
+Angry and the stress model ran backwards -- employees scripted to deteriorate appeared to
+improve, with entirely plausible-looking output. Keying the weights by name removed the whole
+class of bug, teaching me to prefer constructs in which the mistake cannot be expressed.
+
+Technically I gained fluency in pandas, in building and evaluating supervised and unsupervised
+models with scikit-learn, and in applying pre-trained transformers through Hugging Face --
+including extracting intermediate embeddings for one-shot matching rather than only consuming
+the final classification head. Dependency management proved as consequential as modelling: an
+early attempt to use DeepFace failed because it required TensorFlow, which had no build for my
+Python version, and I resolved it with a PyTorch-only Vision Transformer.
+
+Most valuable was learning scepticism about my own results. The habit I am taking forward is
+checking every plausible answer against a baseline, because a model producing sensible-looking
+numbers while learning nothing is far more dangerous than one that visibly fails.
+
+% =====================================================================
+\section*{References}
+\addcontentsline{toc}{section}{References}
+
+\begin{description}
+\item ACM (2018) \emph{ACM Code of Ethics and Professional Conduct}. Available at:
+\url{https://www.acm.org/code-of-ethics} (Accessed: 10 August 2026).
+\item Barocas, S. and Hardt, M. (2017) \emph{Fairness in Machine Learning}. Available at:
+\url{https://fairmlbook.org} (Accessed: 10 August 2026).
+\item D'Mello, S.K., Dieterle, E. and Duckworth, A. (2017) `Advanced, analytic, automated (AAA)
+measurement of engagement during learning', \emph{Educational Psychologist}, 52(2), pp.~104--123.
+\item Floridi, L., Cowls, J., Beltrametti, M., Chatila, R., Chazerand, P., Dignum, V., Luetge,
+C., Madelin, R., Pagallo, U., Rossi, F., Schafer, B., Valcke, P. and Vayena, E. (2018)
+`AI4People -- an ethical framework for a good AI society', \emph{Minds and Machines}, 28(4),
+pp.~689--707.
+\item ICO (2011) \emph{The Employment Practices Code}. Wilmslow: Information Commissioner's
+Office.
+\item ICO (2018) \emph{Guide to the UK General Data Protection Regulation}. Wilmslow:
+Information Commissioner's Office.
+\item O'Neil, C. (2016) \emph{Weapons of Math Destruction: How Big Data Increases Inequality and
+Threatens Democracy}. New York: Crown Publishers.
+\item Pedregosa, F., Varoquaux, G., Gramfort, A. \emph{et al.} (2011) `Scikit-learn: machine
+learning in Python', \emph{Journal of Machine Learning Research}, 12, pp.~2825--2830.
+\item RICS (2021) \emph{RICS Valuation -- Global Standards}. London: Royal Institution of
+Chartered Surveyors.
+\item Zuboff, S. (2019) \emph{The Age of Surveillance Capitalism}. London: Profile Books.
+\end{description}
+
+\end{document}
