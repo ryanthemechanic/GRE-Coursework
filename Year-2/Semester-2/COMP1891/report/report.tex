@@ -8,6 +8,14 @@
 \documentclass[11pt,a4paper]{article}
 
 \usepackage[margin=2.5cm]{geometry}
+% Palatino for text and matching maths, replacing the default Computer Modern,
+% whose thin strokes read as dated. microtype tightens justification.
+\usepackage[T1]{fontenc}
+\usepackage{tgpagella}
+\usepackage[sc]{mathpazo}
+\usepackage{courier}          % monospace that pairs with Palatino
+\usepackage{microtype}
+\linespread{1.05}
 \usepackage{graphicx}
 \usepackage{booktabs}
 \usepackage{amsmath}
@@ -267,11 +275,31 @@ more trustworthy estimate of real-world performance.
 \label{fig:reg}
 \end{figure}
 
-Figure~\ref{fig:coef} shows the fitted coefficients. These must be read with care: as noted in
-A1, \texttt{Parking} and \texttt{Garage\_Area} both measure garage provision and are strongly
-correlated, so the regression distributes credit between them somewhat arbitrarily. Their
-individual coefficients are therefore not a safe guide to the value of an extra parking space,
-even though their combined contribution to prediction is sound.
+Figure~\ref{fig:coef} shows the fitted coefficients, but these must be read with care. Variance
+inflation factors confirm the redundancy anticipated in A1: \texttt{Parking} reaches
+$\mathrm{VIF} = 5.32$ and \texttt{Garage\_Area} $4.87$, meaning 81\% and 80\% of each is
+predictable from the other features. Above the conventional threshold of 5, a coefficient
+becomes unstable, because the model cannot separate two overlapping measurements of the same
+garage provision. Their individual coefficients are therefore not a safe guide to the value of
+an extra parking space, though predictive accuracy is unaffected -- only interpretation is. All
+five remaining features sit below $\mathrm{VIF} = 1.8$ and can be read individually.
+
+Residual diagnostics (Figure~\ref{fig:resid}) test the assumptions behind those figures.
+Residuals average near zero and are close to normal (skew 0.42), so the model is unbiased
+overall. But the correlation between fitted value and absolute residual is 0.537: error grows
+with predicted price. This heteroscedasticity makes the model materially less precise on
+expensive properties, so the single \pounds24{,}000 MAE understates uncertainty at the top of
+the market and overstates it at the bottom. High-value valuations therefore warrant a wider
+interval than the headline figure implies; modelling $\log(\text{price})$ is the standard
+remedy.
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=\textwidth]{B1_residual_diagnostics.png}
+\caption{B1 -- Residual diagnostics: residuals against fitted values, their distribution, and a
+normal Q--Q plot.}
+\label{fig:resid}
+\end{figure}
 
 \begin{figure}[H]
 \centering
@@ -312,8 +340,8 @@ completely, which is precisely why macro-averaged metrics are reported alongside
 \subsection{B3 -- Support Vector Machine}
 
 Three kernels were tuned over $C$ (and $\gamma$) by cross-validation, with
-\texttt{class\_weight='balanced'} so that rare grades are not discarded in favour of the
-dominant one (Table~\ref{tab:svm}).
+\texttt{class\_weight='balanced'} so rare grades are not discarded in favour of the dominant
+one (Table~\ref{tab:svm}).
 
 \begin{table}[H]
 \centering
@@ -331,13 +359,12 @@ Poly (3) & $C=1$, $\gamma$=scale  & 0.172 & 0.524 & 0.317 & 0.253 \\
 \end{tabular}
 \end{table}
 
-The kNN/SVM comparison depends entirely on which metric is chosen. kNN wins on raw accuracy
-(0.549 vs 0.512); the RBF SVM wins decisively on balanced accuracy (0.332 vs 0.155) and
-macro-F1 (0.323 vs 0.150). Class weighting causes the SVM to trade errors on the dominant grade
-for coverage of the rare ones, which lowers accuracy while more than doubling macro-F1. Since
-the agency's interest lies in identifying unusually high- and low-grade properties rather than
-in restating the most common grade, the RBF SVM is the better model despite its lower headline
-accuracy.
+The comparison depends entirely on the metric. kNN wins on raw accuracy (0.549 vs 0.512); the
+RBF SVM wins decisively on balanced accuracy (0.332 vs 0.155) and macro-F1 (0.323 vs 0.150).
+Class weighting makes the SVM trade errors on the dominant grade for coverage of the rare ones,
+lowering accuracy while more than doubling macro-F1. Since the agency needs to identify
+unusually high- and low-grade properties rather than restate the most common grade, the RBF SVM
+is the better model despite its lower headline accuracy.
 
 \begin{figure}[H]
 \centering
@@ -462,24 +489,23 @@ Method 2 -- ViT classifier   & \textbf{0.720} & \textbf{0.708} & \textbf{0.684} 
 \end{tabular}
 \end{table}
 
-\textbf{How successful is the detection?} Both methods substantially beat the 26.0\%
-majority-class baseline, so both genuinely detect expression. Method 2 reaches 72.0\% accuracy;
-Method 1 reaches 66.0\%, a strong result for learning each expression from exactly one example,
-confirming that the embedding space groups faces by expression rather than by identity or
-lighting. The 6-point gap is the price of one-shot learning: with a single reference per class,
+\textbf{How successful is the detection?} Both beat the 26.0\% majority-class baseline, so both
+genuinely detect expression. Method 2 reaches 72.0\%; Method 1 reaches 66.0\%, strong for
+learning each expression from one example, and confirming the embedding space groups faces by
+expression rather than identity or lighting. The 6-point gap is the cost of one-shot learning:
 an unrepresentative exemplar harms an entire category. Method 1 scores 0.00 F1 on Frightful,
-failing all four frightful faces because its single reference does not resemble them, while
-Method 2 recovers them at 0.75 recall.
+failing all four such faces because its single reference does not resemble them, while Method 2
+recovers them at 0.75 recall.
 
 \textbf{Are any images wrongly detected as Neutral?} The methods fail in opposite directions.
 Method 1 never wrongly assigns Neutral, but misses seven of the nine true Neutral faces --
 recall of just 0.22. Method 2 wrongly labels two images Neutral, \texttt{fig109.jpg} (truly
 Angry) and \texttt{fig145.jpg} (truly Sad), and misses six true Neutrals, for 0.33 recall.
 
-Neutral is the hardest class for both, which is intuitive: it is defined by the \emph{absence}
-of expression, so any weak or partial expression sits close to it, and a low-intensity angry or
-sad face is genuinely near-neutral in appearance. This matters for the wellbeing application,
-where misreading distress as neutral is exactly the error of greatest consequence.
+Neutral is the hardest class for both, which is intuitive: defined by the \emph{absence} of
+expression, it sits close to any weak or partial expression, and a low-intensity angry or sad
+face is genuinely near-neutral in appearance. This matters for the wellbeing application, where
+misreading distress as neutral is the error of greatest consequence.
 
 \begin{figure}[H]
 \centering
@@ -568,10 +594,10 @@ rates across demographic groups rather than relying on one headline figure.
 \subsection{D3 -- Intelligent Systems for the Common Good}
 
 In Scenario 1, transparent pricing models can democratise market information, giving first-time
-buyers analytical capability previously confined to institutional investors, while aggregated
-signals help local authorities identify gentrification and target affordable housing. The
-Rating finding shows the wider value: data science can reveal that an established professional
-practice does not track the outcome it claims to.
+buyers analytical capability once confined to institutional investors, while aggregated signals
+help local authorities identify gentrification and target affordable housing. The Rating finding
+shows the wider value: data science can reveal that an established professional practice does
+not track the outcome it claims to.
 
 In Scenario 2, the same technology deployed with consent supports early detection of mental
 health deterioration in clinical settings, and in education can identify distressed students
@@ -608,9 +634,9 @@ level-and-trend rules and mandatory human review follow from the measured limita
 than being generic caveats.
 
 The overriding lesson is that the headline metric is rarely the honest one. Accuracy flattered
-models that had learned only to repeat the majority class; $R^2$ was highest on the split with
-the least reliable test set; and a bar chart of predicted expressions would have looked
-plausible while concealing seven missed Neutral faces.
+models that had learned only to repeat the majority class; $R^2$ was highest on the least
+reliable test set; a single MAE hid that error grows with price; and a bar chart of predicted
+expressions would have looked plausible while concealing seven missed Neutral faces.
 
 \subsection{E2 -- Personal Reflections}
 
