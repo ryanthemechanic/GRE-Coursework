@@ -1,850 +1,996 @@
-// ============================================================
-// COMP1551 Application Development - Coursework
-// Module Leader: Tuan Nguyen
-// Module Lecturer: Nam Lam
-// Student Name: The Viet Phan
-// Student ID: GCS240020
-// ============================================================
-// Project:  Education Centre Desktop Information System
-// Language: C# Console Application
-// OOP Principles Demonstrated:
-//   - Encapsulation  : private fields with public properties
-//   - Inheritance    : Teacher, Admin, Student extend Person
-//   - Polymorphism   : virtual/override Display() and Edit()
-// ============================================================
+// -----------------------------------------------------------------------------
+// COMP1551 Application Development - Coursework, Term 2 2025/26
+// Education Centre Desktop Information System
+//
+// Student:       Phan The Viet
+// Student ID:    GCS240020
+// Module leader: Tuan Nguyen
+//
+// A console application that replaces the paper records of an education centre.
+// It holds three kinds of user - teaching staff, administration staff and
+// students - and offers a menu for adding, listing, listing by role, editing
+// and deleting records.
+//
+// The whole system is kept in this single source file, as the coursework
+// requires. It is arranged top to bottom in the order it is easiest to read:
+//   1. Validation      - the rules a field must satisfy
+//   2. Prompt          - console input that keeps asking until a rule is met
+//   3. Person          - the abstract base class
+//   4. Teacher / Admin / Student - the three derived classes
+//   5. PersonRegister  - the data structure holding every record
+//   6. Program         - the menu and the operations behind it
+// -----------------------------------------------------------------------------
 
 using System;
 using System.Collections.Generic;
 
-// ============================================================
-// BASE CLASS: Person
-// ============================================================
-// Person is declared abstract so it cannot be instantiated
-// directly - only its derived classes (Teacher, Admin, Student)
-// can be created. It holds the four fields that every user type
-// shares and declares the abstract contract (Edit) that all
-// derived classes must fulfil.
-// ============================================================
-abstract class Person
-{
-    // --------------------------------------------------------
-    // Private backing fields - encapsulation ensures these
-    // cannot be modified directly from outside the class.
-    // All access goes through the public properties below.
-    // --------------------------------------------------------
-    private string name;
-    private string telephone;
-    private string email;
-    private string role;
+// =============================================================================
+// 1. VALIDATION
+// =============================================================================
 
-    // --------------------------------------------------------
-    // Constructor
-    // Called by every derived class constructor via base(...).
-    // Assigns values to all shared fields in one place so that
-    // derived classes do not repeat this initialisation logic.
-    // --------------------------------------------------------
-    public Person(string name, string telephone, string email, string role)
+/// <summary>
+/// The field rules of the system, gathered in one place. Both the property
+/// setters and the input prompts call these methods, so a value can never be
+/// accepted at the keyboard that the class itself would reject.
+/// </summary>
+static class Validation
+{
+    /// <summary>A name must contain at least one letter and no digits.</summary>
+    public static bool IsName(string value)
     {
-        this.name      = name;
-        this.telephone = telephone;
-        this.email     = email;
-        this.role      = role;
+        if (string.IsNullOrWhiteSpace(value)) return false;
+
+        bool hasLetter = false;
+        foreach (char c in value)
+        {
+            if (char.IsDigit(c)) return false;   // "Room 12" is not a person
+            if (char.IsLetter(c)) hasLetter = true;
+        }
+        return hasLetter;
     }
 
-    // --------------------------------------------------------
-    // Properties (Encapsulation)
-    // Each property wraps a private field with a getter and a
-    // setter, giving callers controlled access.
-    // --------------------------------------------------------
+    /// <summary>
+    /// A telephone number may carry a leading + and internal spaces, and must
+    /// hold between seven and fifteen digits, the range allowed by E.164.
+    /// </summary>
+    public static bool IsTelephone(string value)
+    {
+        if (string.IsNullOrWhiteSpace(value)) return false;
 
-    // Name - full name of the person
+        string trimmed = value.Trim();
+        int digits = 0;
+
+        for (int i = 0; i < trimmed.Length; i++)
+        {
+            char c = trimmed[i];
+            if (char.IsDigit(c)) digits++;
+            else if (c == '+' && i == 0) continue;      // country prefix
+            else if (c == ' ' || c == '-') continue;    // grouping characters
+            else return false;
+        }
+
+        return digits >= 7 && digits <= 15;
+    }
+
+    /// <summary>
+    /// An email address must be of the form local@domain.tld: exactly one @,
+    /// text on both sides of it, a dot in the domain and no white space.
+    /// </summary>
+    public static bool IsEmail(string value)
+    {
+        if (string.IsNullOrWhiteSpace(value)) return false;
+        if (value.IndexOf(' ') >= 0) return false;
+
+        int at = value.IndexOf('@');
+        if (at <= 0) return false;                          // nothing before @
+        if (at != value.LastIndexOf('@')) return false;      // more than one @
+
+        string domain = value.Substring(at + 1);
+        int dot = domain.IndexOf('.');
+
+        // The dot must sit inside the domain, not at either end of it.
+        return dot > 0 && dot < domain.Length - 1;
+    }
+
+    /// <summary>A subject name is any non-empty piece of text.</summary>
+    public static bool IsSubject(string value)
+    {
+        return !string.IsNullOrWhiteSpace(value);
+    }
+
+    /// <summary>A salary is never negative and is capped to catch typing slips.</summary>
+    public static bool IsSalary(double value)
+    {
+        return value >= 0 && value <= 500000;
+    }
+
+    /// <summary>Contracted hours are counted per week, so 60 is the upper limit.</summary>
+    public static bool IsWorkingHours(double value)
+    {
+        return value > 0 && value <= 60;
+    }
+}
+
+// =============================================================================
+// 2. CONSOLE INPUT
+// =============================================================================
+
+/// <summary>
+/// Every question the system asks at the keyboard goes through this class. Each
+/// method repeats its question until the answer passes the matching rule in
+/// <see cref="Validation"/>, so the calling code never has to test what it read.
+///
+/// Each method also takes the value currently held in the record together with
+/// an "editing" flag. While a record is being entered the flag is false and an
+/// answer is required; while one is being changed it is true, the stored value
+/// is shown in brackets and an empty line keeps it.
+/// </summary>
+static class Prompt
+{
+    /// <summary>Reads a line, never returning null, so the caller can trim it safely.</summary>
+    private static string ReadLine()
+    {
+        return Console.ReadLine() ?? string.Empty;
+    }
+
+    /// <summary>Writes the question, showing the current value in brackets when editing.</summary>
+    private static void Ask(string label, string current, bool editing)
+    {
+        if (editing) Console.Write("  " + label + " [" + current + "]: ");
+        else Console.Write("  " + label + ": ");
+    }
+
+    /// <summary>
+    /// Asks for a piece of text. The rule to apply and the help line to show on
+    /// a bad answer are both passed in, so this one loop serves every text
+    /// field in the system; the four methods below name the fields it collects.
+    /// </summary>
+    private static string Text(string label, string current, bool editing,
+                               Func<string, bool> rule, string help)
+    {
+        while (true)
+        {
+            Ask(label, current, editing);
+            string answer = ReadLine().Trim();
+
+            if (answer.Length == 0 && editing) return current;
+            if (rule(answer)) return answer;
+
+            Console.WriteLine("  " + help);
+        }
+    }
+
+    /// <summary>Asks for a person's name.</summary>
+    public static string Name(string label, string current, bool editing)
+    {
+        return Text(label, current, editing, Validation.IsName,
+                    "A name must contain letters and no digits.");
+    }
+
+    /// <summary>Asks for a telephone number.</summary>
+    public static string Telephone(string label, string current, bool editing)
+    {
+        return Text(label, current, editing, Validation.IsTelephone,
+                    "Enter 7 to 15 digits, for example 020 8331 8000.");
+    }
+
+    /// <summary>Asks for an email address.</summary>
+    public static string Email(string label, string current, bool editing)
+    {
+        return Text(label, current, editing, Validation.IsEmail,
+                    "Enter an address of the form name@domain.ac.uk.");
+    }
+
+    /// <summary>Asks for the name of a subject.</summary>
+    public static string Subject(string label, string current, bool editing)
+    {
+        return Text(label, current, editing, Validation.IsSubject,
+                    "The subject name cannot be left empty.");
+    }
+
+    /// <summary>
+    /// Asks for a number, working the same way as Text: one loop shared by the
+    /// salary and the working hours questions, told apart by the rule passed in.
+    /// </summary>
+    public static double Number(string label, double current, bool editing,
+                                Func<double, bool> rule, string help)
+    {
+        while (true)
+        {
+            Ask(label, current.ToString("0.##"), editing);
+            string answer = ReadLine().Trim();
+
+            if (answer.Length == 0 && editing) return current;
+
+            double parsed;
+            if (double.TryParse(answer, out parsed) && rule(parsed)) return parsed;
+
+            Console.WriteLine("  " + help);
+        }
+    }
+
+    /// <summary>Asks a yes or no question and returns true for yes.</summary>
+    public static bool YesNo(string label, bool current, bool editing)
+    {
+        while (true)
+        {
+            Ask(label + " (y/n)", current ? "y" : "n", editing);
+            string answer = ReadLine().Trim().ToLower();
+
+            if (answer.Length == 0 && editing) return current;
+            if (answer == "y" || answer == "yes") return true;
+            if (answer == "n" || answer == "no") return false;
+
+            Console.WriteLine("  Please answer y or n.");
+        }
+    }
+
+    /// <summary>
+    /// Asks for a whole number between low and high. Used for the menu itself
+    /// and for choosing a record out of a numbered list.
+    /// </summary>
+    public static int Choice(string label, int low, int high)
+    {
+        while (true)
+        {
+            Console.Write("  " + label + ": ");
+            string answer = ReadLine().Trim();
+
+            int parsed;
+            if (int.TryParse(answer, out parsed) && parsed >= low && parsed <= high)
+                return parsed;
+
+            Console.WriteLine("  Enter a number between " + low + " and " + high + ".");
+        }
+    }
+
+    /// <summary>Holds the screen until the user has read what is on it.</summary>
+    public static void Pause()
+    {
+        Console.Write("\n  Press Enter to return to the menu.");
+        Console.ReadLine();
+    }
+}
+
+// =============================================================================
+// 3. BASE CLASS
+// =============================================================================
+
+/// <summary>
+/// The data and behaviour shared by everyone the centre keeps a record of.
+///
+/// Person is abstract because the centre has no plain "people" on its books:
+/// every record is a teacher, an administrator or a student. It therefore
+/// cannot be instantiated, only inherited from.
+///
+/// Encapsulation: the three fields are private and are reached through
+/// properties whose setters enforce the rules in <see cref="Validation"/>. A
+/// Person object can never hold a blank name or a malformed email address,
+/// whatever the calling code does.
+/// </summary>
+abstract class Person
+{
+    // The text fields start as empty strings: a record created by the empty
+    // constructor below is filled in by CaptureDetails a moment later, and no
+    // field is ever left holding nothing at all.
+    private string name = string.Empty;
+    private string telephone = string.Empty;
+    private string email = string.Empty;
+
+    /// <summary>
+    /// Builds a record from a complete set of details. Only the derived classes
+    /// can call this, through base(...), which is how the sample records are
+    /// created in one statement each.
+    /// </summary>
+    protected Person(string name, string telephone, string email)
+    {
+        Name = name;              // assigned through the properties so that the
+        Telephone = telephone;    // rules are applied to these values as well
+        Email = email;
+    }
+
+    /// <summary>
+    /// Builds an empty record, to be filled in straight away by
+    /// <see cref="CaptureDetails"/>. This is the constructor the Add Record
+    /// operation uses: it creates the object of the chosen type first and then
+    /// asks the questions that belong to that type.
+    /// </summary>
+    protected Person()
+    {
+    }
+
+    /// <summary>The person's full name.</summary>
     public string Name
     {
         get { return name; }
-        set { name = value; }
+        set
+        {
+            if (!Validation.IsName(value))
+                throw new ArgumentException("Invalid name: " + value);
+            name = value;
+        }
     }
 
-    // Telephone - contact phone number
+    /// <summary>A contact telephone number.</summary>
     public string Telephone
     {
         get { return telephone; }
-        set { telephone = value; }
+        set
+        {
+            if (!Validation.IsTelephone(value))
+                throw new ArgumentException("Invalid telephone number: " + value);
+            telephone = value;
+        }
     }
 
-    // Email - contact email address
+    /// <summary>A contact email address.</summary>
     public string Email
     {
         get { return email; }
-        set { email = value; }
+        set
+        {
+            if (!Validation.IsEmail(value))
+                throw new ArgumentException("Invalid email address: " + value);
+            email = value;
+        }
     }
 
-    // Role - read publicly, but only settable by derived classes
-    // (protected set), so external code cannot change the role
-    // of an existing object after it has been created.
-    public string Role
+    /// <summary>
+    /// The group this record belongs to. It is declared abstract and has no
+    /// setter, so the role is decided by the class of the object and cannot
+    /// drift out of step with it: a Teacher is a teacher for as long as it
+    /// exists.
+    /// </summary>
+    public abstract string Role { get; }
+
+    /// <summary>
+    /// Prints the details every record has. The derived classes override this,
+    /// call back into it with base.PrintDetails() and then add their own lines,
+    /// so the shared block is written out once only.
+    /// </summary>
+    public virtual void PrintDetails()
     {
-        get { return role; }
-        protected set { role = value; }
+        Console.WriteLine("  Name:          " + Name);
+        Console.WriteLine("  Telephone:     " + Telephone);
+        Console.WriteLine("  Email:         " + Email);
+        Console.WriteLine("  Role:          " + Role);
     }
 
-    // --------------------------------------------------------
-    // Virtual Display() - Polymorphism
-    // Prints the four shared fields to the console.
-    // Marked virtual so derived classes can override it and
-    // call base.Display() to reuse this implementation before
-    // printing their own additional fields.
-    // --------------------------------------------------------
-    public virtual void Display()
+    /// <summary>
+    /// Asks for the details every record has. The derived classes override this
+    /// the same way as PrintDetails, which means adding a record and editing one
+    /// run through exactly the same questions.
+    /// </summary>
+    /// <param name="editing">
+    /// False while a new record is being entered, when every question must be
+    /// answered; true while an existing record is being changed, when an empty
+    /// line keeps the value already stored.
+    /// </param>
+    public virtual void CaptureDetails(bool editing)
     {
-        Console.WriteLine($"  Name:      {name}");
-        Console.WriteLine($"  Telephone: {telephone}");
-        Console.WriteLine($"  Email:     {email}");
-        Console.WriteLine($"  Role:      {role}");
+        Name = Prompt.Name("Name", Name, editing);
+        Telephone = Prompt.Telephone("Telephone", Telephone, editing);
+        Email = Prompt.Email("Email", Email, editing);
     }
 
-    // --------------------------------------------------------
-    // Abstract Edit() - Polymorphism + Inheritance contract
-    // Declared abstract (no body here) so every derived class
-    // is forced to provide its own implementation. This allows
-    // the Program class to call Edit() on any Person reference
-    // and have the correct version execute at runtime.
-    // --------------------------------------------------------
-    public abstract void Edit();
+    /// <summary>
+    /// A one-line summary, used by the numbered lists the user picks from when
+    /// editing or deleting a record.
+    /// </summary>
+    public override string ToString()
+    {
+        return Name + " (" + Role + ")";
+    }
 }
 
-// ============================================================
-// DERIVED CLASS: Teacher
-// ============================================================
-// Teacher inherits all shared fields and behaviour from Person
-// and adds three fields specific to teaching staff:
-//   salary    - annual salary in pounds
-//   subject1  - name of first subject taught
-//   subject2  - name of second subject taught
-// ============================================================
+// =============================================================================
+// 4. DERIVED CLASSES
+// =============================================================================
+
+/// <summary>
+/// A member of the teaching staff: a salary and the two subjects taught, on top
+/// of the details held for everyone.
+/// </summary>
 class Teacher : Person
 {
-    // Private fields specific to the Teacher class.
-    // Accessible only through the properties defined below.
     private double salary;
-    private string subject1;
-    private string subject2;
+    private string subject1 = string.Empty;
+    private string subject2 = string.Empty;
 
-    // --------------------------------------------------------
-    // Constructor
-    // Passes the shared parameters to Person via base(...),
-    // hard-coding the role string as "Teacher". Then
-    // initialises the three teacher-specific fields.
-    // --------------------------------------------------------
+    /// <summary>Builds a complete teacher record.</summary>
     public Teacher(string name, string telephone, string email,
                    double salary, string subject1, string subject2)
-        : base(name, telephone, email, "Teacher")
+        : base(name, telephone, email)   // the shared details are handled by Person
     {
-        this.salary   = salary;
-        this.subject1 = subject1;
-        this.subject2 = subject2;
+        Salary = salary;
+        Subject1 = subject1;
+        Subject2 = subject2;
     }
 
-    // --------------------------------------------------------
-    // Properties - encapsulated access to private fields
-    // --------------------------------------------------------
+    /// <summary>Builds an empty teacher record for the Add Record operation.</summary>
+    public Teacher()
+    {
+    }
 
-    // Annual salary in pounds sterling
+    /// <summary>Annual salary in pounds.</summary>
     public double Salary
     {
         get { return salary; }
-        set { salary = value; }
+        set
+        {
+            if (!Validation.IsSalary(value))
+                throw new ArgumentException("Invalid salary: " + value);
+            salary = value;
+        }
     }
 
-    // Name of the first subject taught by this teacher
+    /// <summary>The first of the two subjects taught.</summary>
     public string Subject1
     {
         get { return subject1; }
-        set { subject1 = value; }
+        set
+        {
+            if (!Validation.IsSubject(value))
+                throw new ArgumentException("Invalid subject name.");
+            subject1 = value;
+        }
     }
 
-    // Name of the second subject taught by this teacher
+    /// <summary>The second of the two subjects taught.</summary>
     public string Subject2
     {
         get { return subject2; }
-        set { subject2 = value; }
+        set
+        {
+            if (!Validation.IsSubject(value))
+                throw new ArgumentException("Invalid subject name.");
+            subject2 = value;
+        }
     }
 
-    // --------------------------------------------------------
-    // Override Display() - Polymorphism
-    // Calls the base implementation first (prints Name,
-    // Telephone, Email, Role) then appends the three fields
-    // that are unique to teachers.
-    // --------------------------------------------------------
-    public override void Display()
+    /// <summary>Fixed by the class itself, as explained in Person.Role.</summary>
+    public override string Role
     {
-        base.Display();  // Print the four shared fields first
-        Console.WriteLine($"  Salary:    £{salary:F2}");
-        Console.WriteLine($"  Subject 1: {subject1}");
-        Console.WriteLine($"  Subject 2: {subject2}");
+        get { return "Teacher"; }
     }
 
-    // --------------------------------------------------------
-    // Override Edit() - Polymorphism
-    // Prompts the user to update every field belonging to this
-    // teacher record. Pressing Enter (blank input) leaves the
-    // existing value unchanged. Salary input is validated with
-    // TryParse so non-numeric input is safely ignored.
-    // --------------------------------------------------------
-    public override void Edit()
+    /// <summary>Prints the shared details, then the three teaching fields.</summary>
+    public override void PrintDetails()
     {
-        // Prompt for each shared field (inherited from Person)
-        Console.Write($"  Name [{Name}]: ");
-        string input = Console.ReadLine();
-        if (!string.IsNullOrWhiteSpace(input)) Name = input;
+        base.PrintDetails();
+        Console.WriteLine("  Salary (GBP):  " + salary.ToString("N2"));
+        Console.WriteLine("  Subject 1:     " + subject1);
+        Console.WriteLine("  Subject 2:     " + subject2);
+    }
 
-        Console.Write($"  Telephone [{Telephone}]: ");
-        input = Console.ReadLine();
-        if (!string.IsNullOrWhiteSpace(input)) Telephone = input;
+    /// <summary>Asks the shared questions, then the three teaching ones.</summary>
+    public override void CaptureDetails(bool editing)
+    {
+        base.CaptureDetails(editing);
 
-        Console.Write($"  Email [{Email}]: ");
-        input = Console.ReadLine();
-        if (!string.IsNullOrWhiteSpace(input)) Email = input;
-
-        // Salary: only update if the user enters a valid number
-        Console.Write($"  Salary [{salary}]: ");
-        input = Console.ReadLine();
-        if (!string.IsNullOrWhiteSpace(input) && double.TryParse(input, out double sal))
-            salary = sal;
-
-        // Prompt for the two teacher-specific subject fields
-        Console.Write($"  Subject 1 [{subject1}]: ");
-        input = Console.ReadLine();
-        if (!string.IsNullOrWhiteSpace(input)) subject1 = input;
-
-        Console.Write($"  Subject 2 [{subject2}]: ");
-        input = Console.ReadLine();
-        if (!string.IsNullOrWhiteSpace(input)) subject2 = input;
+        Salary = Prompt.Number("Salary (GBP)", salary, editing,
+                               Validation.IsSalary,
+                               "Enter a salary between 0 and 500000.");
+        Subject1 = Prompt.Subject("Subject 1", subject1, editing);
+        Subject2 = Prompt.Subject("Subject 2", subject2, editing);
     }
 }
 
-// ============================================================
-// DERIVED CLASS: Admin
-// ============================================================
-// Admin inherits all shared fields from Person and adds three
-// fields specific to administration staff:
-//   salary       - annual salary in pounds
-//   isFullTime   - true = full-time; false = part-time
-//   workingHours - contracted hours per week
-// ============================================================
+/// <summary>
+/// A member of the administration staff: a salary, whether the post is full or
+/// part time, and the hours worked each week.
+/// </summary>
 class Admin : Person
 {
-    // Private fields specific to administration staff.
     private double salary;
-    private bool   isFullTime;
+    private bool fullTime;
     private double workingHours;
 
-    // --------------------------------------------------------
-    // Constructor
-    // Delegates the four shared fields to base Person and
-    // sets the role string to "Admin". Initialises the three
-    // admin-specific fields from the supplied arguments.
-    // --------------------------------------------------------
+    /// <summary>Builds a complete administration record.</summary>
     public Admin(string name, string telephone, string email,
-                 double salary, bool isFullTime, double workingHours)
-        : base(name, telephone, email, "Admin")
+                 double salary, bool fullTime, double workingHours)
+        : base(name, telephone, email)
     {
-        this.salary       = salary;
-        this.isFullTime   = isFullTime;
-        this.workingHours = workingHours;
+        Salary = salary;
+        FullTime = fullTime;
+        WorkingHours = workingHours;
     }
 
-    // --------------------------------------------------------
-    // Properties - encapsulated access to private fields
-    // --------------------------------------------------------
+    /// <summary>Builds an empty administration record for the Add Record operation.</summary>
+    public Admin()
+    {
+    }
 
-    // Annual salary in pounds sterling
+    /// <summary>Annual salary in pounds.</summary>
     public double Salary
     {
         get { return salary; }
-        set { salary = value; }
+        set
+        {
+            if (!Validation.IsSalary(value))
+                throw new ArgumentException("Invalid salary: " + value);
+            salary = value;
+        }
     }
 
-    // Employment type: true = full-time, false = part-time
-    public bool IsFullTime
+    /// <summary>True for a full-time post, false for a part-time one.</summary>
+    public bool FullTime
     {
-        get { return isFullTime; }
-        set { isFullTime = value; }
+        get { return fullTime; }
+        set { fullTime = value; }   // a boolean cannot hold an invalid value
     }
 
-    // Number of contracted hours worked per week
+    /// <summary>Contracted hours per week.</summary>
     public double WorkingHours
     {
         get { return workingHours; }
-        set { workingHours = value; }
+        set
+        {
+            if (!Validation.IsWorkingHours(value))
+                throw new ArgumentException("Invalid working hours: " + value);
+            workingHours = value;
+        }
     }
 
-    // --------------------------------------------------------
-    // Override Display() - Polymorphism
-    // Calls base.Display() for shared fields then prints the
-    // three administration-specific fields. The boolean
-    // isFullTime is shown as a human-readable "Full-time" or
-    // "Part-time" string using a conditional expression.
-    // --------------------------------------------------------
-    public override void Display()
+    /// <summary>Fixed by the class itself, as explained in Person.Role.</summary>
+    public override string Role
     {
-        base.Display();  // Print the four shared fields first
-        Console.WriteLine($"  Salary:        £{salary:F2}");
-        Console.WriteLine($"  Employment:    {(isFullTime ? "Full-time" : "Part-time")}");
-        Console.WriteLine($"  Working Hours: {workingHours} hrs/week");
+        get { return "Admin"; }
     }
 
-    // --------------------------------------------------------
-    // Override Edit() - Polymorphism
-    // Prompts for all admin fields. The boolean isFullTime is
-    // collected via a y/n prompt; any other input leaves the
-    // current value unchanged.
-    // --------------------------------------------------------
-    public override void Edit()
+    /// <summary>Prints the shared details, then the three administration fields.</summary>
+    public override void PrintDetails()
     {
-        // Prompt for the four shared Person fields
-        Console.Write($"  Name [{Name}]: ");
-        string input = Console.ReadLine();
-        if (!string.IsNullOrWhiteSpace(input)) Name = input;
+        base.PrintDetails();
+        Console.WriteLine("  Salary (GBP):  " + salary.ToString("N2"));
+        Console.WriteLine("  Contract:      " + (fullTime ? "Full-time" : "Part-time"));
+        Console.WriteLine("  Weekly hours:  " + workingHours.ToString("0.##"));
+    }
 
-        Console.Write($"  Telephone [{Telephone}]: ");
-        input = Console.ReadLine();
-        if (!string.IsNullOrWhiteSpace(input)) Telephone = input;
+    /// <summary>Asks the shared questions, then the three administration ones.</summary>
+    public override void CaptureDetails(bool editing)
+    {
+        base.CaptureDetails(editing);
 
-        Console.Write($"  Email [{Email}]: ");
-        input = Console.ReadLine();
-        if (!string.IsNullOrWhiteSpace(input)) Email = input;
-
-        // Salary: only update if the user provides a valid number
-        Console.Write($"  Salary [{salary}]: ");
-        input = Console.ReadLine();
-        if (!string.IsNullOrWhiteSpace(input) && double.TryParse(input, out double sal))
-            salary = sal;
-
-        // Employment type: accept 'y' (full-time) or 'n' (part-time)
-        // Current value is displayed so the user knows what is stored.
-        Console.Write($"  Full-time? (y/n) [{(isFullTime ? "y" : "n")}]: ");
-        input = Console.ReadLine()?.ToLower();
-        if      (input == "y") isFullTime = true;
-        else if (input == "n") isFullTime = false;
-
-        // Working hours: only update if a valid number is entered
-        Console.Write($"  Working Hours [{workingHours}]: ");
-        input = Console.ReadLine();
-        if (!string.IsNullOrWhiteSpace(input) && double.TryParse(input, out double hrs))
-            workingHours = hrs;
+        Salary = Prompt.Number("Salary (GBP)", salary, editing,
+                               Validation.IsSalary,
+                               "Enter a salary between 0 and 500000.");
+        FullTime = Prompt.YesNo("Full-time", fullTime, editing);
+        WorkingHours = Prompt.Number("Weekly hours", workingHours, editing,
+                                     Validation.IsWorkingHours,
+                                     "Enter the hours worked per week, up to 60.");
     }
 }
 
-// ============================================================
-// DERIVED CLASS: Student
-// ============================================================
-// Student inherits all shared fields from Person and adds
-// three enrolled subject names. Students have no salary or
-// employment data, distinguishing them clearly from staff.
-// ============================================================
+/// <summary>
+/// A student: the three subjects studied, on top of the details held for
+/// everyone. Students carry no pay or contract data, which is the reason the
+/// salary field sits in the two staff classes rather than in Person.
+/// </summary>
 class Student : Person
 {
-    // Private fields holding the three enrolled subject names.
-    private string subject1;
-    private string subject2;
-    private string subject3;
+    private string subject1 = string.Empty;
+    private string subject2 = string.Empty;
+    private string subject3 = string.Empty;
 
-    // --------------------------------------------------------
-    // Constructor
-    // Passes shared fields to base Person with the role set
-    // to "Student". Stores the three subject name arguments.
-    // --------------------------------------------------------
+    /// <summary>Builds a complete student record.</summary>
     public Student(string name, string telephone, string email,
                    string subject1, string subject2, string subject3)
-        : base(name, telephone, email, "Student")
+        : base(name, telephone, email)
     {
-        this.subject1 = subject1;
-        this.subject2 = subject2;
-        this.subject3 = subject3;
+        Subject1 = subject1;
+        Subject2 = subject2;
+        Subject3 = subject3;
     }
 
-    // --------------------------------------------------------
-    // Properties - encapsulated access to private subject fields
-    // --------------------------------------------------------
+    /// <summary>Builds an empty student record for the Add Record operation.</summary>
+    public Student()
+    {
+    }
 
-    // Name of the student's first enrolled subject
+    /// <summary>The first subject studied.</summary>
     public string Subject1
     {
         get { return subject1; }
-        set { subject1 = value; }
+        set
+        {
+            if (!Validation.IsSubject(value))
+                throw new ArgumentException("Invalid subject name.");
+            subject1 = value;
+        }
     }
 
-    // Name of the student's second enrolled subject
+    /// <summary>The second subject studied.</summary>
     public string Subject2
     {
         get { return subject2; }
-        set { subject2 = value; }
+        set
+        {
+            if (!Validation.IsSubject(value))
+                throw new ArgumentException("Invalid subject name.");
+            subject2 = value;
+        }
     }
 
-    // Name of the student's third enrolled subject
+    /// <summary>The third subject studied.</summary>
     public string Subject3
     {
         get { return subject3; }
-        set { subject3 = value; }
+        set
+        {
+            if (!Validation.IsSubject(value))
+                throw new ArgumentException("Invalid subject name.");
+            subject3 = value;
+        }
     }
 
-    // --------------------------------------------------------
-    // Override Display() - Polymorphism
-    // Calls base.Display() to print shared fields then appends
-    // the three subject names specific to this student.
-    // --------------------------------------------------------
-    public override void Display()
+    /// <summary>Fixed by the class itself, as explained in Person.Role.</summary>
+    public override string Role
     {
-        base.Display();  // Print the four shared fields first
-        Console.WriteLine($"  Subject 1: {subject1}");
-        Console.WriteLine($"  Subject 2: {subject2}");
-        Console.WriteLine($"  Subject 3: {subject3}");
+        get { return "Student"; }
     }
 
-    // --------------------------------------------------------
-    // Override Edit() - Polymorphism
-    // Prompts for all student fields. Blank input retains the
-    // currently stored value for any field.
-    // --------------------------------------------------------
-    public override void Edit()
+    /// <summary>Prints the shared details, then the three subjects.</summary>
+    public override void PrintDetails()
     {
-        // Prompt for the four shared Person fields
-        Console.Write($"  Name [{Name}]: ");
-        string input = Console.ReadLine();
-        if (!string.IsNullOrWhiteSpace(input)) Name = input;
+        base.PrintDetails();
+        Console.WriteLine("  Subject 1:     " + subject1);
+        Console.WriteLine("  Subject 2:     " + subject2);
+        Console.WriteLine("  Subject 3:     " + subject3);
+    }
 
-        Console.Write($"  Telephone [{Telephone}]: ");
-        input = Console.ReadLine();
-        if (!string.IsNullOrWhiteSpace(input)) Telephone = input;
+    /// <summary>Asks the shared questions, then the three subject ones.</summary>
+    public override void CaptureDetails(bool editing)
+    {
+        base.CaptureDetails(editing);
 
-        Console.Write($"  Email [{Email}]: ");
-        input = Console.ReadLine();
-        if (!string.IsNullOrWhiteSpace(input)) Email = input;
-
-        // Prompt for the three student-specific subject fields
-        Console.Write($"  Subject 1 [{subject1}]: ");
-        input = Console.ReadLine();
-        if (!string.IsNullOrWhiteSpace(input)) subject1 = input;
-
-        Console.Write($"  Subject 2 [{subject2}]: ");
-        input = Console.ReadLine();
-        if (!string.IsNullOrWhiteSpace(input)) subject2 = input;
-
-        Console.Write($"  Subject 3 [{subject3}]: ");
-        input = Console.ReadLine();
-        if (!string.IsNullOrWhiteSpace(input)) subject3 = input;
+        Subject1 = Prompt.Subject("Subject 1", subject1, editing);
+        Subject2 = Prompt.Subject("Subject 2", subject2, editing);
+        Subject3 = Prompt.Subject("Subject 3", subject3, editing);
     }
 }
 
-// ============================================================
-// MAIN PROGRAM CLASS
-// ============================================================
-// Contains the application entry point and all menu-driven
-// operations. Uses a single static List<Person> as the data
-// structure for all records.
-//
-// Because List<Person> holds references to the base type, it
-// can store Teacher, Admin, and Student objects together.
-// When Display() or Edit() is called on a list element, the
-// runtime resolves the correct override automatically - this
-// is runtime polymorphism (dynamic dispatch).
-// ============================================================
+// =============================================================================
+// 5. DATA STRUCTURE
+// =============================================================================
+
+/// <summary>
+/// The store of records, and the only part of the system that knows how they
+/// are held.
+///
+/// A List&lt;Person&gt; is used rather than an array because the centre cannot say in
+/// advance how many records it will keep: the list grows as records are added
+/// and closes the gap when one is removed. Because the list is declared on the
+/// base type it holds Teacher, Admin and Student objects side by side, and the
+/// operations below work on all three without asking which is which.
+/// </summary>
+class PersonRegister
+{
+    private List<Person> people = new List<Person>();
+
+    /// <summary>How many records are currently held.</summary>
+    public int Count
+    {
+        get { return people.Count; }
+    }
+
+    /// <summary>Reads the record at a position in the list, counting from zero.</summary>
+    public Person this[int index]
+    {
+        get { return people[index]; }
+    }
+
+    /// <summary>Adds a record to the end of the list.</summary>
+    public void Add(Person person)
+    {
+        people.Add(person);
+    }
+
+    /// <summary>Removes the record at the given position.</summary>
+    public void RemoveAt(int index)
+    {
+        people.RemoveAt(index);
+    }
+
+    /// <summary>Every record, in the order they were added.</summary>
+    public List<Person> All()
+    {
+        return people;
+    }
+
+    /// <summary>
+    /// The records belonging to one group. The comparison is made against the
+    /// Role property, so a record is selected by the class it was created from.
+    /// </summary>
+    public List<Person> ByRole(string role)
+    {
+        List<Person> matches = new List<Person>();
+
+        foreach (Person person in people)
+        {
+            if (person.Role == role) matches.Add(person);
+        }
+
+        return matches;
+    }
+}
+
+// =============================================================================
+// 6. THE APPLICATION
+// =============================================================================
+
+/// <summary>
+/// The menu and the five operations behind it. This class holds no data of its
+/// own beyond the register; everything it prints comes from calling methods on
+/// the records themselves.
+/// </summary>
 class Program
 {
-    // --------------------------------------------------------
-    // people - the central dynamic data structure.
-    // List<Person> expands automatically as records are added,
-    // so it can hold an unlimited number of objects. Declared
-    // static because all menu methods share the same list
-    // without needing to pass it as a parameter.
-    // --------------------------------------------------------
-    static List<Person> people = new List<Person>();
+    /// <summary>The single store of records, shared by every operation below.</summary>
+    private static PersonRegister register = new PersonRegister();
 
-    // --------------------------------------------------------
-    // Main - application entry point
-    // Sets the console title, seeds sample data so the system
-    // is demonstrable on first launch, then enters the main
-    // menu loop. The loop runs until the user chooses Exit (6).
-    // --------------------------------------------------------
-    static void Main(string[] args)
+    /// <summary>
+    /// Starts the application: loads the sample records, then shows the menu
+    /// until the user chooses to close the system.
+    /// </summary>
+    static void Main()
     {
-        // Set a descriptive window title for the console
-        Console.Title = "Education Centre Desktop Information System";
+        LoadSampleRecords();
 
-        // Populate the list with representative sample records
-        SeedData();
-
-        // Keep displaying the menu until the user exits
         bool running = true;
         while (running)
         {
-            // Render the menu and read the user's selection
-            ShowMainMenu();
-            string choice = Console.ReadLine()?.Trim();
+            ShowMenu();
 
-            // Route each numeric choice to the matching method
-            switch (choice)
+            switch (Prompt.Choice("Select an option", 1, 6))
             {
-                case "1": AddRecord();      break;  // Add a new person record
-                case "2": ViewAllRecords(); break;  // Show every record
-                case "3": ViewByRole();     break;  // Filter records by role
-                case "4": EditRecord();     break;  // Modify an existing record
-                case "5": DeleteRecord();   break;  // Remove a record
-                case "6": running = false;  break;  // Exit the application
-                default:
-                    // Handle any input that does not match a valid option
-                    Console.WriteLine("\n  Invalid option. Press Enter to continue.");
-                    Console.ReadLine();
-                    break;
+                case 1: AddRecord(); break;
+                case 2: ViewAllRecords(); break;
+                case 3: ViewRecordsByRole(); break;
+                case 4: EditRecord(); break;
+                case 5: DeleteRecord(); break;
+                case 6: running = false; break;
             }
         }
 
-        // Farewell message displayed before the application closes
-        Console.WriteLine("\n  Goodbye.");
+        Console.WriteLine("\n  System closed.");
     }
 
-    // --------------------------------------------------------
-    // ShowMainMenu
-    // Clears the screen and prints the numbered main menu.
-    // Called at the start of every loop iteration so the user
-    // always sees a clean menu after completing an operation.
-    // --------------------------------------------------------
-    static void ShowMainMenu()
+    // -------------------------------------------------------------------------
+    // Screen furniture
+    // -------------------------------------------------------------------------
+
+    /// <summary>
+    /// Clears the window and writes a heading. Console.Clear throws when the
+    /// output is being redirected to a file rather than to a window, so the
+    /// call is skipped in that case.
+    /// </summary>
+    private static void Heading(string title)
     {
-        Console.Clear();
-        Console.WriteLine("==========================================");
-        Console.WriteLine("  Education Centre Information System");
-        Console.WriteLine("==========================================");
-        Console.WriteLine("  1. Add New Record");
-        Console.WriteLine("  2. View All Records");
-        Console.WriteLine("  3. View Records by Role");
-        Console.WriteLine("  4. Edit Existing Record");
-        Console.WriteLine("  5. Delete Record");
-        Console.WriteLine("  6. Exit");
-        Console.WriteLine("==========================================");
-        Console.Write("  Select an option: ");
+        if (!Console.IsOutputRedirected) Console.Clear();
+
+        Console.WriteLine();
+        Console.WriteLine("  =====================================================");
+        Console.WriteLine("   " + title);
+        Console.WriteLine("  =====================================================");
     }
 
-    // --------------------------------------------------------
-    // AddRecord
-    // Prompts the user to select a role (Teacher / Admin /
-    // Student) then collects the required fields for that role.
-    // Shared fields (Name, Telephone, Email) are collected
-    // first, followed by the role-specific fields. A new object
-    // of the appropriate derived class is then created and
-    // appended to the people list.
-    // --------------------------------------------------------
-    static void AddRecord()
+    /// <summary>Writes the main menu.</summary>
+    private static void ShowMenu()
     {
-        Console.Clear();
-        Console.WriteLine("==========================================");
-        Console.WriteLine("  Add New Record");
-        Console.WriteLine("==========================================");
+        Heading("Education Centre Information System");
+        Console.WriteLine("   1. Add a new record");
+        Console.WriteLine("   2. View all records");
+        Console.WriteLine("   3. View records by role");
+        Console.WriteLine("   4. Edit a record");
+        Console.WriteLine("   5. Delete a record");
+        Console.WriteLine("   6. Exit");
+        Console.WriteLine("  =====================================================");
+        Console.WriteLine("   Records held: " + register.Count);
+        Console.WriteLine();
+    }
 
-        // Ask the user to choose which role to add
-        Console.WriteLine("  Select role:");
-        Console.WriteLine("  1. Teacher");
-        Console.WriteLine("  2. Admin");
-        Console.WriteLine("  3. Student");
-        Console.Write("  Choice: ");
-        string roleChoice = Console.ReadLine()?.Trim();
-
-        // Collect the four fields shared by all person types
-        Console.Write("  Name: ");
-        string name = Console.ReadLine();
-
-        Console.Write("  Telephone: ");
-        string telephone = Console.ReadLine();
-
-        Console.Write("  Email: ");
-        string email = Console.ReadLine();
-
-        // Branch based on the chosen role to collect role-specific
-        // data and create the correct derived class object.
-        switch (roleChoice)
+    /// <summary>
+    /// Writes a list of records, numbered from one, each set apart by a rule.
+    /// PrintDetails is called on the base type, so the version belonging to the
+    /// actual class of each record runs and the right fields appear. This is
+    /// where polymorphism does the work: the loop never asks what it is holding.
+    /// </summary>
+    private static void PrintRecords(List<Person> records)
+    {
+        for (int i = 0; i < records.Count; i++)
         {
-            case "1":
-                // --- Teacher-specific fields ---
-                Console.Write("  Salary: £");
-                // TryParse prevents a crash if the user enters non-numeric text
-                double.TryParse(Console.ReadLine(), out double tSalary);
+            Console.WriteLine("\n  [" + (i + 1) + "] -------------------------------------------------");
+            records[i].PrintDetails();
+        }
+    }
 
-                Console.Write("  Subject 1: ");
-                string ts1 = Console.ReadLine();
+    /// <summary>
+    /// Writes a numbered one-line summary of every record and asks the user to
+    /// pick one, returning its position in the register. Editing and deleting
+    /// both start this way, so the code sits here rather than in either of them.
+    /// </summary>
+    private static int SelectRecord(string action)
+    {
+        Console.WriteLine();
+        for (int i = 0; i < register.Count; i++)
+        {
+            Console.WriteLine("   " + (i + 1) + ". " + register[i]);
+        }
+        Console.WriteLine();
 
-                Console.Write("  Subject 2: ");
-                string ts2 = Console.ReadLine();
+        return Prompt.Choice("Record to " + action, 1, register.Count) - 1;
+    }
 
-                // Instantiate a Teacher and add it to the shared list
-                people.Add(new Teacher(name, telephone, email, tSalary, ts1, ts2));
-                break;
+    // -------------------------------------------------------------------------
+    // The five operations
+    // -------------------------------------------------------------------------
 
-            case "2":
-                // --- Admin-specific fields ---
-                Console.Write("  Salary: £");
-                double.TryParse(Console.ReadLine(), out double aSalary);
+    /// <summary>
+    /// Adds a record. The user picks a group first, because that decides which
+    /// class is created; the object then asks for its own fields through
+    /// CaptureDetails, so this method never has to list them.
+    /// </summary>
+    private static void AddRecord()
+    {
+        Heading("Add a new record");
+        Console.WriteLine("   1. Teaching staff");
+        Console.WriteLine("   2. Administration");
+        Console.WriteLine("   3. Student");
+        Console.WriteLine();
 
-                // Employment type is collected as a y/n character
-                Console.Write("  Full-time? (y/n): ");
-                bool fullTime = Console.ReadLine()?.ToLower() == "y";
-
-                Console.Write("  Working Hours per week: ");
-                double.TryParse(Console.ReadLine(), out double hours);
-
-                // Instantiate an Admin and add it to the shared list
-                people.Add(new Admin(name, telephone, email, aSalary, fullTime, hours));
-                break;
-
-            case "3":
-                // --- Student-specific fields ---
-                Console.Write("  Subject 1: ");
-                string ss1 = Console.ReadLine();
-
-                Console.Write("  Subject 2: ");
-                string ss2 = Console.ReadLine();
-
-                Console.Write("  Subject 3: ");
-                string ss3 = Console.ReadLine();
-
-                // Instantiate a Student and add it to the shared list
-                people.Add(new Student(name, telephone, email, ss1, ss2, ss3));
-                break;
-
-            default:
-                // Inform the user if their role selection was not recognised
-                Console.WriteLine("\n  Invalid role selection. Record not added.");
-                Console.ReadLine();
-                return;
+        Person person;
+        switch (Prompt.Choice("Group", 1, 3))
+        {
+            case 1: person = new Teacher(); break;
+            case 2: person = new Admin(); break;
+            default: person = new Student(); break;
         }
 
-        Console.WriteLine("\n  Record added successfully. Press Enter to continue.");
-        Console.ReadLine();
+        Console.WriteLine();
+        person.CaptureDetails(false);
+        register.Add(person);
+
+        Console.WriteLine("\n  Record saved for " + person + ".");
+        Prompt.Pause();
     }
 
-    // --------------------------------------------------------
-    // ViewAllRecords
-    // Iterates through every element in the people list and
-    // calls Display() on each one. Because people is typed as
-    // List<Person> but contains Teacher, Admin, and Student
-    // objects, the runtime invokes the correct overridden
-    // Display() method for each element (polymorphism).
-    // --------------------------------------------------------
-    static void ViewAllRecords()
+    /// <summary>Lists every record held, whichever group it belongs to.</summary>
+    private static void ViewAllRecords()
     {
-        Console.Clear();
-        Console.WriteLine("==========================================");
-        Console.WriteLine("  All Records");
-        Console.WriteLine("==========================================");
+        Heading("All records");
 
-        // Inform the user if there are currently no records stored
-        if (people.Count == 0)
+        if (register.Count == 0)
         {
-            Console.WriteLine("  No records found.");
+            Console.WriteLine("\n  There are no records to show.");
         }
         else
         {
-            // Display each record with a numbered heading for readability
-            for (int i = 0; i < people.Count; i++)
-            {
-                Console.WriteLine($"\n  [{i + 1}] ----------------------------------------");
-                // Polymorphic call: Display() resolves to Teacher, Admin, or Student
-                people[i].Display();
-            }
+            PrintRecords(register.All());
         }
 
-        Console.WriteLine("\n  Press Enter to continue.");
-        Console.ReadLine();
+        Prompt.Pause();
     }
 
-    // --------------------------------------------------------
-    // ViewByRole
-    // Asks the user to choose a role then iterates the list,
-    // printing only those records whose Role property matches
-    // the selection. Uses a switch expression to map the
-    // numeric menu choice to the role string.
-    // --------------------------------------------------------
-    static void ViewByRole()
+    /// <summary>Lists the records of one group only.</summary>
+    private static void ViewRecordsByRole()
     {
-        Console.Clear();
-        Console.WriteLine("==========================================");
-        Console.WriteLine("  View Records by Role");
-        Console.WriteLine("==========================================");
-        Console.WriteLine("  1. Teachers");
-        Console.WriteLine("  2. Admin Staff");
-        Console.WriteLine("  3. Students");
-        Console.Write("  Choice: ");
-        string choice = Console.ReadLine()?.Trim();
+        Heading("View records by role");
+        Console.WriteLine("   1. Teaching staff");
+        Console.WriteLine("   2. Administration");
+        Console.WriteLine("   3. Students");
+        Console.WriteLine();
 
-        // Translate the numeric choice into the role string
-        // used in Person.Role so records can be matched.
-        string roleFilter = choice switch
+        // The menu numbers are turned into the role names the records carry.
+        string role;
+        switch (Prompt.Choice("Group", 1, 3))
         {
-            "1" => "Teacher",
-            "2" => "Admin",
-            "3" => "Student",
-            _   => ""          // Empty string signals an unrecognised choice
-        };
-
-        // Reject any input that did not match a valid option
-        if (string.IsNullOrEmpty(roleFilter))
-        {
-            Console.WriteLine("\n  Invalid selection. Press Enter to continue.");
-            Console.ReadLine();
-            return;
+            case 1: role = "Teacher"; break;
+            case 2: role = "Admin"; break;
+            default: role = "Student"; break;
         }
 
-        Console.WriteLine($"\n  --- {roleFilter} Records ---");
-        bool found = false;  // Track whether any matching records were found
+        List<Person> matches = register.ByRole(role);
 
-        // Iterate all records and display only those matching the chosen role
-        foreach (Person p in people)
+        if (matches.Count == 0)
         {
-            if (p.Role == roleFilter)
-            {
-                Console.WriteLine("\n  ----------------------------------------");
-                p.Display();   // Polymorphic call to the correct override
-                found = true;
-            }
-        }
-
-        // Inform the user if no records exist for the selected role
-        if (!found)
-            Console.WriteLine($"\n  No {roleFilter} records found.");
-
-        Console.WriteLine("\n  Press Enter to continue.");
-        Console.ReadLine();
-    }
-
-    // --------------------------------------------------------
-    // EditRecord
-    // Displays a numbered summary of all records so the user
-    // can identify which one to edit. After the user enters a
-    // valid record number, the polymorphic Edit() method is
-    // called on that Person object - Teacher.Edit(), Admin.Edit()
-    // or Student.Edit() is invoked automatically at runtime.
-    // --------------------------------------------------------
-    static void EditRecord()
-    {
-        Console.Clear();
-        Console.WriteLine("==========================================");
-        Console.WriteLine("  Edit Record");
-        Console.WriteLine("==========================================");
-
-        // Cannot edit if there are no records in the list
-        if (people.Count == 0)
-        {
-            Console.WriteLine("  No records available to edit. Press Enter to continue.");
-            Console.ReadLine();
-            return;
-        }
-
-        // Print a concise numbered list (Name + Role) for record selection
-        for (int i = 0; i < people.Count; i++)
-            Console.WriteLine($"  [{i + 1}] {people[i].Name} ({people[i].Role})");
-
-        // Read and validate the user's choice
-        Console.Write("\n  Enter record number to edit: ");
-        if (!int.TryParse(Console.ReadLine(), out int index) || index < 1 || index > people.Count)
-        {
-            Console.WriteLine("  Invalid selection. Press Enter to continue.");
-            Console.ReadLine();
-            return;
-        }
-
-        // Remind the user they can skip fields by pressing Enter
-        Console.WriteLine("\n  Leave any field blank to keep the existing value.\n");
-
-        // Polymorphic dispatch: calls the Edit() override matching the
-        // actual runtime type of the selected Person object.
-        people[index - 1].Edit();
-
-        Console.WriteLine("\n  Record updated successfully. Press Enter to continue.");
-        Console.ReadLine();
-    }
-
-    // --------------------------------------------------------
-    // DeleteRecord
-    // Displays a numbered summary of all records, validates the
-    // user's selection, asks for explicit confirmation, then
-    // removes the chosen record from the list. Confirmation
-    // prevents accidental permanent deletion of data.
-    // --------------------------------------------------------
-    static void DeleteRecord()
-    {
-        Console.Clear();
-        Console.WriteLine("==========================================");
-        Console.WriteLine("  Delete Record");
-        Console.WriteLine("==========================================");
-
-        // Cannot delete if there are no records in the list
-        if (people.Count == 0)
-        {
-            Console.WriteLine("  No records available to delete. Press Enter to continue.");
-            Console.ReadLine();
-            return;
-        }
-
-        // Print a numbered list so the user can identify the target record
-        for (int i = 0; i < people.Count; i++)
-            Console.WriteLine($"  [{i + 1}] {people[i].Name} ({people[i].Role})");
-
-        // Read and validate the record number
-        Console.Write("\n  Enter record number to delete: ");
-        if (!int.TryParse(Console.ReadLine(), out int index) || index < 1 || index > people.Count)
-        {
-            Console.WriteLine("  Invalid selection. Press Enter to continue.");
-            Console.ReadLine();
-            return;
-        }
-
-        // Store a reference to the target record before removing it
-        // so its name and role can be shown in the confirmation prompt.
-        Person target = people[index - 1];
-
-        // Confirm deletion with the user to prevent accidental data loss
-        Console.Write($"\n  Are you sure you want to delete '{target.Name}' ({target.Role})? (y/n): ");
-
-        if (Console.ReadLine()?.ToLower() == "y")
-        {
-            // RemoveAt removes the element at the given zero-based index
-            people.RemoveAt(index - 1);
-            Console.WriteLine("  Record deleted successfully.");
+            Console.WriteLine("\n  There are no records in this group.");
         }
         else
         {
-            // User chose not to proceed - leave the list unchanged
-            Console.WriteLine("  Deletion cancelled.");
+            Console.WriteLine("\n  " + matches.Count + " record(s) in the " + role + " group.");
+            PrintRecords(matches);
         }
 
-        Console.WriteLine("  Press Enter to continue.");
-        Console.ReadLine();
+        Prompt.Pause();
     }
 
-    // --------------------------------------------------------
-    // SeedData
-    // Pre-populates the list with six representative records
-    // (two of each type) so the application can be demonstrated
-    // immediately after launch without manually adding records.
-    // Demonstrates all three derived class constructors.
-    // --------------------------------------------------------
-    static void SeedData()
+    /// <summary>
+    /// Changes a record. CaptureDetails is called again, this time in editing
+    /// mode, so the user is taken through the same questions with the stored
+    /// values shown in brackets and an empty line keeps any of them.
+    /// </summary>
+    private static void EditRecord()
     {
-        // Add two Teacher records with salary and subject data
-        people.Add(new Teacher("Dr. Sarah Johnson", "07700900123", "s.johnson@edu.ac.uk",
-                               45000, "Mathematics", "Physics"));
-        people.Add(new Teacher("Mr. James Lee", "07700900456", "j.lee@edu.ac.uk",
-                               38000, "English", "History"));
+        Heading("Edit a record");
 
-        // Add two Admin records: one full-time (37.5 hrs) and one part-time (20 hrs)
-        people.Add(new Admin("Ms. Claire Adams", "07700900789", "c.adams@edu.ac.uk",
-                             28000, true, 37.5));
-        people.Add(new Admin("Mr. Tom Brown", "07700901000", "t.brown@edu.ac.uk",
-                             14000, false, 20.0));
+        if (register.Count == 0)
+        {
+            Console.WriteLine("\n  There are no records to edit.");
+            Prompt.Pause();
+            return;
+        }
 
-        // Add two Student records each with three enrolled subjects
-        people.Add(new Student("Alice Green", "07700901234", "a.green@student.edu.ac.uk",
-                               "Mathematics", "Physics", "Computer Science"));
-        people.Add(new Student("Bob White", "07700901567", "b.white@student.edu.ac.uk",
-                               "English", "History", "Art"));
+        Person person = register[SelectRecord("edit")];
+
+        Console.WriteLine("\n  Editing " + person + ".");
+        Console.WriteLine("  Press Enter on its own to keep the value in brackets.\n");
+
+        person.CaptureDetails(true);
+
+        Console.WriteLine("\n  Record updated:\n");
+        person.PrintDetails();
+        Prompt.Pause();
+    }
+
+    /// <summary>
+    /// Removes a record, after asking the user to confirm. Deletion cannot be
+    /// undone, which is why the record is named back to the user first.
+    /// </summary>
+    private static void DeleteRecord()
+    {
+        Heading("Delete a record");
+
+        if (register.Count == 0)
+        {
+            Console.WriteLine("\n  There are no records to delete.");
+            Prompt.Pause();
+            return;
+        }
+
+        int index = SelectRecord("delete");
+        Person person = register[index];
+
+        Console.WriteLine();
+        if (Prompt.YesNo("Delete " + person + " permanently", false, false))
+        {
+            register.RemoveAt(index);
+            Console.WriteLine("\n  Record deleted.");
+        }
+        else
+        {
+            Console.WriteLine("\n  Nothing was deleted.");
+        }
+
+        Prompt.Pause();
+    }
+
+    // -------------------------------------------------------------------------
+    // Sample data
+    // -------------------------------------------------------------------------
+
+    /// <summary>
+    /// Puts six records into the register, two from each group, so that the
+    /// listing, editing and deleting operations have something to work on as
+    /// soon as the system starts.
+    /// </summary>
+    private static void LoadSampleRecords()
+    {
+        register.Add(new Teacher("Sarah Whitfield", "020 8331 8000",
+                                 "s.whitfield@centre.ac.uk", 45200, "Mathematics", "Physics"));
+        register.Add(new Teacher("Daniel Osei", "020 8331 8014",
+                                 "d.osei@centre.ac.uk", 38750, "English", "History"));
+
+        register.Add(new Admin("Claire Bennett", "020 8331 8022",
+                               "c.bennett@centre.ac.uk", 29400, true, 37.5));
+        register.Add(new Admin("Marek Nowak", "020 8331 8035",
+                               "m.nowak@centre.ac.uk", 15600, false, 20));
+
+        register.Add(new Student("Alice Green", "07700 900123",
+                                 "a.green@student.centre.ac.uk",
+                                 "Mathematics", "Physics", "Computing"));
+        register.Add(new Student("Bilal Rahman", "07700 900456",
+                                 "b.rahman@student.centre.ac.uk",
+                                 "English", "History", "Economics"));
     }
 }
